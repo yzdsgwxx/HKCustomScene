@@ -650,6 +650,15 @@ Unity 已重启、`Editor.log` 无编译错误、命令桥恢复应答（pid 751
    **"工程锁放开 且 目标 dll 不再被占用"** 才算退干净；拷贝失败的报错能区分**被占用**与**权限/只读**。
    （四种状态都实测过：Unity 开着时工程锁 = locked、dll = ok、普通文件 = ok、不存在 = missing。）
 
+**补（23:2x）：编辑器里给"摆放点"加图标（用户要求"只在编辑器中显示"）**
+
+- 新增 `UnityProject\HKModCustomScene\Assets\Editor\HKCSPlacementGizmos.cs`（骨架 `UnityProject\Assets\Editor\` 同路径一份）：
+  · Scene 视图：`[DrawGizmo(NonSelected|Selected|Active)]` 给挂了 `PatchBench`/`PatchEnemy` 的物体画图标 **+ 一个线框**（线框兜底，图标加载不出来也能看见位置和尺寸）；
+  · Hierarchy 视图：`EditorApplication.hierarchyWindowItemOnGUI` 在物体名字右侧画 16×16 小图标（显式 `AssetDatabase.LoadAssetAtPath<Texture2D>`，不依赖 DrawIcon 的按名解析，最稳）。
+- 图标文件：`Assets\Gizmos\HKCS_Bench.png`（长椅：靠背+座面+三条腿）、`HKCS_Enemy.png`（小怪），64×64，用 `System.Drawing` 生成（System.Drawing 在这台机器上的 PS 5.1 里可用）。
+- **纯编辑器绘制**：`[DrawGizmo]` / Hierarchy GUI 都只在编辑器里跑，不进 AssetBundle、游戏里完全不执行（摆放用的空物体在游戏里本来也不可见 —— 真正的东西是运行时从原版 prefab 克隆出来的）。
+- Unity 已自动导入并重编 `Assembly-CSharp-Editor`（23:21:02 → **23:25:43**），`Editor.log` 里无 `error CS`；`.meta` 都由 Unity 生成（`HKCSPlacementGizmos.cs.meta` + 两个 png.meta）。
+
 **还没验证（需要用户进游戏）**
 
 1. `Zombie Runner` / `Fly` 这两个预载**路径名对不对** —— 不对时 ModLog 会打
