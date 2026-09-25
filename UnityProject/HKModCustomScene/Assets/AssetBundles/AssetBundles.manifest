@@ -1,0 +1,7 @@
+ManifestFileVersion: 0
+CRC: 1064974284
+AssetBundleManifest:
+  AssetBundleInfos:
+    Info_0:
+      Name: hkcs_scenes
+      Dependencies: {}

@@ -1,0 +1,92 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>HKCustomSceneMod</AssemblyName>
+    <RootNamespace>HKCustomSceneMod</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Deterministic>true</Deterministic>
+
+    <!-- 游戏引用目录 = 装着 Assembly-CSharp.dll 的那个 Managed 文件夹。
+         本机实测位置：D:\APP\steam.exe\steamapps\common\Hollow Knight\hollow_knight_Data\Managed
+         （不是 Steam 默认路径；换机器就改这里，或命令行传 -p:HollowKnightRefs=...） -->
+    <HollowKnightRefs Condition="'$(HollowKnightRefs)' == ''">D:\APP\steam.exe\steamapps\common\Hollow Knight\hollow_knight_Data\Managed</HollowKnightRefs>
+    <ModsFolder>$(HollowKnightRefs)\Mods\HKCustomSceneMod</ModsFolder>
+  </PropertyGroup>
+
+  <!-- 只显式引用真正用到的几个。不要用 $(HollowKnightRefs)\*.dll 通配：
+       那个文件夹里同时有 System.* / netstandard 等，通配会把它们全拖进来，
+       和 net472 的框架程序集撞名，报一堆 CS0433。 -->
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(HollowKnightRefs)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- MonoMod 的 On. / IL. 钩子。PatchTilemapSize 用到 On.GameManager.RefreshTilemapInfo -->
+    <Reference Include="MMHOOK_Assembly-CSharp">
+      <HintPath>$(HollowKnightRefs)\MMHOOK_Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- ⚠ 不要再引用 Modding.dll：本机（API v77）的 Managed 里**没有**这个文件 ——
+         新版 Modding API 把自己的类型（Modding.IMod / ILogger / Logger …）直接并进了
+         Assembly-CSharp.dll。引用不存在的 Modding.dll 会出 MSB3245 警告，
+         而且 Modding.ILogger 会和 UnityEngine.ILogger 撞名（CS0104）→ 见各个 .cs 里的别名。 -->
+    <!-- SFCore：提供 SaveSettingsMod<T>（在 SFCore.Generics 命名空间）以及场景里要用的 MonoBehaviour -->
+    <Reference Include="SFCore">
+      <HintPath>$(HollowKnightRefs)\Mods\SFCore\SFCore.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- PlayMaker（FsmVariables / PlayMakerFSM）—— 本仓库里就是 HutongGames 那套 -->
+    <Reference Include="PlayMaker">
+      <HintPath>$(HollowKnightRefs)\PlayMaker.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(HollowKnightRefs)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(HollowKnightRefs)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>$(HollowKnightRefs)\UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- ⚠ 不要再引用 UnityEngine.SceneManagementModule.dll：HK 的 Managed 里没有这个文件
+         （Unity 2019+ 的 UnityEngine.SceneManagement 命名空间在 CoreModule 里）。 -->
+    <Reference Include="UnityEngine.Physics2DModule">
+      <HintPath>$(HollowKnightRefs)\UnityEngine.Physics2DModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- 缺哪个类型就照上面的样子补一行；找不到 PlayMaker.dll 就先跑一次编译看报什么 -->
+
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+
+  <!-- AssetBundle 作为内嵌资源进 dll，运行时不依赖外部文件。
+       两条都带 Exists 条件：Resources\ 下存在哪个文件就嵌哪个。
+       这样"还没打包 → 文件不存在 → 编译直接失败"不会发生。
+       SceneChanger.Init() 先找 hkcs_scenes，找不到再退回 my_first_assetbundle。
+       → 阶段三第 18 步只要把打出来的包放进 FinalMod\Resources\ 即可，不用再改本文件。 -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\hkcs_scenes"
+                      Condition="Exists('$(MSBuildProjectDirectory)\Resources\hkcs_scenes')">
+      <LogicalName>HKCustomSceneMod.Resources.hkcs_scenes</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\my_first_assetbundle"
+                      Condition="Exists('$(MSBuildProjectDirectory)\Resources\my_first_assetbundle')">
+      <LogicalName>HKCustomSceneMod.Resources.my_first_assetbundle</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- 编译完直接落到 Mods 文件夹；不想自动拷就删掉这个 Target -->
+  <Target Name="CopyToMods" AfterTargets="Build" Condition="Exists('$(ModsFolder)')">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsFolder)" />
+    <Message Importance="high" Text="已拷贝到 $(ModsFolder)" />
+  </Target>
+
+</Project>

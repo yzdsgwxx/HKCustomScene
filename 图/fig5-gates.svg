@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" font-family="Microsoft YaHei, Segoe UI, PingFang SC, sans-serif">
+  <rect width="1200" height="720" fill="#ffffff"/>
+  <text x="600" y="42" font-size="26" font-weight="bold" fill="#111827" text-anchor="middle">图 5 · 门（TransitionPoint）与落点（entryPoint）</text>
+  <text x="600" y="70" font-size="15" fill="#6b7280" text-anchor="middle">A 房间的 entryPoint 字符串，必须和 B 房间里那个落点物体的名字逐字相同</text>
+
+  <!-- Room A -->
+  <rect x="60" y="120" width="420" height="300" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="2.5"/>
+  <text x="270" y="152" font-size="17" font-weight="bold" fill="#166534" text-anchor="middle">HKCS_Room01（宽 64 × 高 32）</text>
+  <rect x="90" y="270" width="80" height="120" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="130" y="336" font-size="14" fill="#166534" text-anchor="middle">left1</text>
+  <rect x="370" y="270" width="80" height="120" rx="6" fill="#fefce8" stroke="#ca8a04" stroke-width="2.5"/>
+  <text x="410" y="330" font-size="14" fill="#854d0e" text-anchor="middle">right1</text>
+  <text x="410" y="350" font-size="11" fill="#854d0e" text-anchor="middle">门</text>
+  <text x="270" y="200" font-size="14" fill="#374151" text-anchor="middle">地形 + 碰撞体（Layer 8）</text>
+  <text x="270" y="228" font-size="14" fill="#374151" text-anchor="middle">__Initializer（三个 Patch 组件）</text>
+  <text x="270" y="256" font-size="14" fill="#374151" text-anchor="middle">_Managers</text>
+
+  <!-- arrow -->
+  <path d="M450 330 L700 330" stroke="#6b7280" stroke-width="3" marker-end="url(#arr)"/>
+  <text x="575" y="316" font-size="14" fill="#374151" text-anchor="middle">玩家碰门</text>
+
+  <!-- Room B -->
+  <rect x="700" y="120" width="440" height="300" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="2.5"/>
+  <text x="920" y="152" font-size="17" font-weight="bold" fill="#166534" text-anchor="middle">HKCS_Room02（宽 48 × 高 48）</text>
+  <rect x="710" y="270" width="80" height="120" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="2.5"/>
+  <text x="750" y="330" font-size="14" fill="#1e40af" text-anchor="middle">left1</text>
+  <text x="750" y="350" font-size="11" fill="#1e40af" text-anchor="middle">落点</text>
+  <rect x="1050" y="270" width="80" height="120" rx="6" fill="#fefce8" stroke="#ca8a04" stroke-width="2"/>
+  <text x="1090" y="330" font-size="14" fill="#854d0e" text-anchor="middle">right1</text>
+  <text x="1090" y="350" font-size="11" fill="#854d0e" text-anchor="middle">门</text>
+  <text x="920" y="200" font-size="14" fill="#374151" text-anchor="middle">地形 + 碰撞体</text>
+  <text x="920" y="228" font-size="14" fill="#374151" text-anchor="middle">__Initializer</text>
+  <text x="920" y="256" font-size="14" fill="#374151" text-anchor="middle">_Managers</text>
+
+  <!-- the two fields -->
+  <rect x="330" y="460" width="540" height="120" rx="10" fill="#fff7ed" stroke="#d97706" stroke-width="2.5"/>
+  <text x="600" y="490" font-size="15" font-weight="bold" fill="#9a3412" text-anchor="middle">Room01 的 right1 门上的两个字段</text>
+  <rect x="355" y="504" width="490" height="60" rx="6" fill="#ffffff" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="375" y="528" font-size="14" fill="#374151" font-family="Consolas, monospace">targetScene = "HKCS_Room02"</text>
+  <text x="375" y="552" font-size="14" fill="#374151" font-family="Consolas, monospace">entryPoint  = "left1"</text>
+
+  <!-- note -->
+  <rect x="60" y="600" width="1080" height="100" rx="10" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/>
+  <text x="600" y="630" font-size="15" font-weight="bold" fill="#991b1b" text-anchor="middle">两个最容易踩的坑</text>
+  <text x="600" y="658" font-size="14" fill="#374151" text-anchor="middle">① entryPoint 写错一个字 → 玩家掉到 (0,0) 或直接飞出场景</text>
+  <text x="600" y="682" font-size="14" fill="#374151" text-anchor="middle">② 门叫 door1 / door2 时，光改 TransitionPoint 没用，还要同步它 "Door Control" FSM 的 New Scene / Entry Gate</text>
+
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280"/>
+    </marker>
+  </defs>
+</svg>

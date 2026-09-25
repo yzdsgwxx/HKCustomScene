@@ -1,0 +1,55 @@
+# =============================================================================
+#  .gitignore —— hkmod-custom-scene
+#  原则：只提交「人和 Unity 需要、且不能自动重建」的东西；
+#        Unity 的 Library/Temp/Logs 与 dotnet 的 bin/obj 都可以重建，不进仓库。
+#        注意：*.meta 必须提交（Unity 靠它认 GUID），这里**不**忽略。
+# =============================================================================
+
+# ---- Unity 自动生成、可重建 ----
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]serSettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+sysinfo.txt
+
+# Unity 崩溃 / 分析报告
+crashlytics-build.properties
+*.stackdump
+
+# ---- dotnet / VS / Rider ----
+[Bb]in/
+[Oo]bj/
+.vs/
+.idea/
+*.csproj.user
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb.meta
+*.mdb.meta
+
+# ---- 本仓库工具的运行时产物（见 tools\README.md）----
+tools/.bridge/
+tools/_stage/
+tools/_backup/
+*.bak-*
+*.bak
+
+# ---- 操作系统杂物 ----
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# ---- 编辑器临时文件 ----
+*~
+*.swp
+*.tmp

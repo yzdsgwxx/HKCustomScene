@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    壳工程：只提供 MonoBehaviours 的"形状"（成员变量），函数体全空。
+    编译产物自动拷进真工程 UnityProject/HKModCustomScene/Assets/Assemblies/，
+    Unity 才能把组件挂到 GameObject 上并把字段值序列化进 .unity。
+
+    三条铁律（缺一条 Unity 就认不出来）：
+      1. AssemblyName 必须和 FinalMod 那个工程**完全一致** → HKCustomSceneMod
+      2. 命名空间与类名必须一致 → HKCustomSceneMod.Patchers.PatchAreaTitleController
+      3. **不许引用 HK 的程序集**，只引用 UnityEngine。
+         引用 Assembly-CSharp 会让 Unity 加载这个 dll 时炸掉。
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>HKCustomSceneMod</AssemblyName>
+    <RootNamespace>HKCustomSceneMod</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+
+    <!-- Unity 2020.2.2 的托管程序集目录。装到别处就改这里（或在命令行 -p:UnityManaged=...）。
+         本机实测位置：D:\UnityEngine\2020.2.2f1（Unity Hub 的 secondaryInstallPath）。
+         默认的 C:\Program Files\Unity\Hub\Editor\2020.2.2f1 在本机**不存在**。 -->
+    <UnityManaged Condition="'$(UnityManaged)' == ''">D:\UnityEngine\2020.2.2f1\Editor\Data\Managed\UnityEngine</UnityManaged>
+    <UnityEditorManaged Condition="'$(UnityEditorManaged)' == ''">D:\UnityEngine\2020.2.2f1\Editor\Data\Managed</UnityEditorManaged>
+    <!-- 真 Unity 工程（AssetBundle 工程）的 Assets 目录 -->
+    <UnityProjectAssets Condition="'$(UnityProjectAssets)' == ''">$(MSBuildProjectDirectory)\..\UnityProject\HKModCustomScene\Assets</UnityProjectAssets>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 只引用 Module 程序集。
+         **不要**再引用 $(UnityEditorManaged)\UnityEngine.dll：Unity 2020 的
+         Editor\Data\Managed\UnityEngine.dll 是旧的单体程序集，和 CoreModule 一起引用
+         会 CS0433「类型 MonoBehaviour 同时存在于两个程序集」。 -->
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(UnityManaged)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.Physics2DModule">
+      <HintPath>$(UnityManaged)\UnityEngine.Physics2DModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(UnityManaged)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- 编译产物直接进真工程。注意目标是 HKModCustomScene\Assets\Assemblies，
+       不是外层骨架的 UnityProject\Assets\Assemblies（那是拷贝源，别搞混）。 -->
+  <Target Name="CopyToUnity" AfterTargets="Build">
+    <MakeDir Directories="$(UnityProjectAssets)\Assemblies" />
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFolder="$(UnityProjectAssets)\Assemblies" />
+    <Message Importance="high" Text="已拷贝 $(TargetFileName) → $(UnityProjectAssets)\Assemblies\" />
+  </Target>
+
+</Project>

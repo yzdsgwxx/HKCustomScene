@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" font-family="Microsoft YaHei, Segoe UI, PingFang SC, sans-serif">
+  <rect width="1200" height="900" fill="#ffffff"/>
+  <text x="600" y="42" font-size="26" font-weight="bold" fill="#111827" text-anchor="middle">图 2 · 一个房间（Unity 场景）里有什么</text>
+  <text x="600" y="70" font-size="15" fill="#6b7280" text-anchor="middle">绿色=你自己画　　蓝色=必须从原版"借"　　橙色=我们的代码负责</text>
+
+  <!-- root -->
+  <rect x="430" y="100" width="340" height="52" rx="8" fill="#f3f4f6" stroke="#111827" stroke-width="2.5"/>
+  <text x="600" y="133" font-size="17" font-weight="bold" fill="#111827" text-anchor="middle">HKCS_Room01.unity（场景根）</text>
+
+  <!-- level 1 row -->
+  <line x1="600" y1="152" x2="600" y2="180" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="120" y1="180" x2="1080" y2="180" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="120" y1="180" x2="120" y2="205" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="360" y1="180" x2="360" y2="205" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="840" y1="180" x2="840" y2="205" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="1080" y1="180" x2="1080" y2="205" stroke="#9ca3af" stroke-width="2"/>
+
+  <!-- Terrain -->
+  <rect x="40" y="205" width="320" height="200" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="200" y="234" font-size="16" font-weight="bold" fill="#166534" text-anchor="middle">TileMap Render Data</text>
+  <text x="200" y="262" font-size="13" fill="#374151" text-anchor="middle">地形 mesh（可来自 Blender）</text>
+  <rect x="62" y="278" width="276" height="46" rx="6" fill="#ffffff" stroke="#86efac" stroke-width="1.5"/>
+  <text x="200" y="307" font-size="13" fill="#374151" text-anchor="middle">EdgeCollider2D / PolygonCollider2D</text>
+  <rect x="62" y="332" width="276" height="56" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="200" y="356" font-size="14" font-weight="bold" fill="#166534" text-anchor="middle">Layer 必须 = 8 (Terrain)</text>
+  <text x="200" y="378" font-size="12" fill="#374151" text-anchor="middle">否则角色穿地 / 掉出地图</text>
+
+  <!-- borrowed -->
+  <rect x="380" y="205" width="340" height="200" rx="8" fill="#eef3fb" stroke="#4a6fa5" stroke-width="2"/>
+  <text x="550" y="234" font-size="16" font-weight="bold" fill="#1e40af" text-anchor="middle">从原版借来的（预载）</text>
+  <rect x="402" y="250" width="296" height="40" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="550" y="276" font-size="13" fill="#374151" text-anchor="middle">_SceneManager（环境/音乐/氛围）</text>
+  <rect x="402" y="298" width="296" height="40" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="550" y="324" font-size="13" fill="#374151" text-anchor="middle">_Managers/PlayMaker Unity 2D</text>
+  <rect x="402" y="346" width="296" height="40" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="550" y="372" font-size="13" fill="#374151" text-anchor="middle">Area Title Controller（区域名）</text>
+
+  <!-- our code -->
+  <rect x="740" y="205" width="420" height="200" rx="8" fill="#fff7ed" stroke="#d97706" stroke-width="2"/>
+  <text x="950" y="234" font-size="16" font-weight="bold" fill="#9a3412" text-anchor="middle">我们的组件（挂在 __Initializer 上）</text>
+  <rect x="762" y="250" width="376" height="40" rx="6" fill="#ffffff" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="950" y="276" font-size="13" fill="#374151" text-anchor="middle">PatchAreaTitleController　→ 弹区域名</text>
+  <rect x="762" y="298" width="376" height="40" rx="6" fill="#ffffff" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="950" y="324" font-size="13" fill="#374151" text-anchor="middle">PatchPlayMakerManager　→ 指向 _Managers</text>
+  <rect x="762" y="346" width="376" height="40" rx="6" fill="#ffffff" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="950" y="372" font-size="13" fill="#374151" text-anchor="middle">SceneMapPatcher（挂在地形上）</text>
+
+  <!-- doors -->
+  <rect x="40" y="450" width="520" height="180" rx="8" fill="#fefce8" stroke="#ca8a04" stroke-width="2"/>
+  <text x="300" y="480" font-size="16" font-weight="bold" fill="#854d0e" text-anchor="middle">门（TransitionPoint，命名有约定）</text>
+  <rect x="62" y="496" width="150" height="52" rx="6" fill="#ffffff" stroke="#fde047" stroke-width="1.5"/>
+  <text x="137" y="520" font-size="14" fill="#374151" text-anchor="middle">left1</text>
+  <text x="137" y="540" font-size="12" fill="#6b7280" text-anchor="middle">从左边进来的落点</text>
+  <rect x="224" y="496" width="150" height="52" rx="6" fill="#ffffff" stroke="#fde047" stroke-width="1.5"/>
+  <text x="299" y="520" font-size="14" fill="#374151" text-anchor="middle">right1</text>
+  <text x="299" y="540" font-size="12" fill="#6b7280" text-anchor="middle">去下一间房的门</text>
+  <rect x="386" y="496" width="152" height="52" rx="6" fill="#ffffff" stroke="#fde047" stroke-width="1.5"/>
+  <text x="462" y="520" font-size="14" fill="#374151" text-anchor="middle">door1</text>
+  <text x="462" y="540" font-size="12" fill="#dc2626" text-anchor="middle">还要同步 FSM 变量</text>
+  <text x="300" y="580" font-size="13" fill="#374151" text-anchor="middle">每个门下面必须有 HazardRespawnMarker 子物体</text>
+  <text x="300" y="604" font-size="13" fill="#dc2626" text-anchor="middle">否则摔死后会重生在很奇怪的地方</text>
+
+  <!-- misc -->
+  <rect x="600" y="450" width="560" height="180" rx="8" fill="#f3f4f6" stroke="#6b7280" stroke-width="2"/>
+  <text x="880" y="480" font-size="16" font-weight="bold" fill="#374151" text-anchor="middle">其他常摆的东西</text>
+  <text x="880" y="512" font-size="14" fill="#374151" text-anchor="middle">CameraLockArea　→ 限制相机能移动到哪</text>
+  <text x="880" y="540" font-size="14" fill="#374151" text-anchor="middle">BlurPlane（z ≈ 7）→ 背景虚化</text>
+  <text x="880" y="568" font-size="14" fill="#374151" text-anchor="middle">装饰精灵 → 挂 SpritePatcher</text>
+  <text x="880" y="596" font-size="14" fill="#374151" text-anchor="middle">_Managers 空物体 → PlayMaker 管理器的父节点</text>
+
+  <!-- bottom note -->
+  <rect x="40" y="670" width="1120" height="190" rx="10" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/>
+  <text x="600" y="702" font-size="17" font-weight="bold" fill="#991b1b" text-anchor="middle">最反直觉的一点：房间"多大"这件事不在场景里</text>
+  <text x="600" y="734" font-size="14" fill="#374151" text-anchor="middle">场景只画了地形；"这间房宽 64 格、高 32 格"是游戏的 GameManager 维护的</text>
+  <text x="600" y="760" font-size="14" fill="#374151" text-anchor="middle">原版尺寸写在内置表里，你的自定义房间不在表里 → 必须进房间时主动让它重读一次</text>
+  <text x="600" y="794" font-size="14" font-weight="bold" fill="#991b1b" text-anchor="middle">GameManager.instance.RefreshTilemapInfo(房间名)　← 官方教程没写这一步</text>
+  <text x="600" y="826" font-size="13" fill="#6b7280" text-anchor="middle">不做这一步的后果：走到房间边缘相机不动、角色卡住、屏幕边缘出现错误黑幕</text>
+</svg>
