@@ -133,6 +133,13 @@ function Get-HkcsUnityProcessForProject {
     $result = @()
     try {
         $procs = @(Get-CimInstance -ClassName Win32_Process -Filter "Name='Unity.exe'" -ErrorAction Stop)
+        # CIM 有时能列出进程、却读不到 CommandLine（权限受限）：
+        # 这时绝不能返回空列表 —— 否则会被误判成「Unity 已退出」，然后在 Unity 还攥着
+        # Assets\Assemblies 里 dll 的时候去覆盖它。宁可保守地按「所有 Unity 进程」处理。
+        $withCmd = @($procs | Where-Object { $_.CommandLine })
+        if ($procs.Count -gt 0 -and $withCmd.Count -eq 0) {
+            return (Get-HkcsUnityProcess)
+        }
         foreach ($pr in $procs) {
             if ($pr.CommandLine -and $pr.CommandLine -like ('*' + $Paths.UnityProject + '*')) {
                 $found = Get-Process -Id $pr.ProcessId -ErrorAction SilentlyContinue
@@ -142,6 +149,28 @@ function Get-HkcsUnityProcessForProject {
         return $result
     } catch {
         return (Get-HkcsUnityProcess)
+    }
+}
+
+function Get-HkcsFileLockState {
+    <#
+      文件现在能不能写：返回 'ok' / 'locked'（被别的进程占用）/ 'denied'（权限/只读）/ 'missing'。
+      「Unity 是否真的退干净了」用这个判断比查进程准 —— 进程还在关闭途中时，
+      工程锁文件已经放开，但 dll 的句柄还攥着。
+    #>
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return 'missing' }
+    try {
+        $fs = [System.IO.File]::Open($Path,
+                                     [System.IO.FileMode]::Open,
+                                     [System.IO.FileAccess]::ReadWrite,
+                                     [System.IO.FileShare]::None)
+        $fs.Close()
+        return 'ok'
+    } catch [System.IO.IOException] {
+        return 'locked'
+    } catch {
+        return 'denied'
     }
 }
 
@@ -178,10 +207,17 @@ function Wait-HkcsUnityReady {
 function Wait-HkcsUnityExit {
     param($Paths, [int]$TimeoutSec = 60)
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $warned = $false
     while ((Get-Date) -lt $deadline) {
-        $open  = Test-HkcsUnityProjectOpen -Paths $Paths
-        $procs = @(Get-HkcsUnityProcessForProject -Paths $Paths)
-        if ((-not $open) -and ($procs.Count -eq 0)) { return $true }
+        $open = Test-HkcsUnityProjectOpen -Paths $Paths
+        # 真正的"退干净"判据：工程锁放开 **且** 那个要被覆盖的 dll 不再被占用。
+        # （权限拒绝不算"没退干净"，那种情况等多久都没用，直接返回让上层给出准确报错。）
+        $state = Get-HkcsFileLockState -Path $Paths.ShellDllInUnity
+        if (-not $open -and $state -ne 'locked') { return $true }
+        if ($state -eq 'locked' -and -not $warned) {
+            Write-HkcsInfo 'Unity 已放开工序锁，但 Assets\Assemblies 里的 dll 还被它攥着，再等一会儿 ...'
+            $warned = $true
+        }
         Start-Sleep -Seconds 1
     }
     return $false
@@ -558,10 +594,17 @@ function Copy-HkcsFileWithBackup {
             Copy-Item -LiteralPath $Source -Destination $dest -Force -ErrorAction Stop
             break
         } catch {
+            $state = Get-HkcsFileLockState -Path $dest
             if ((Get-Date) -ge $deadline) {
-                Stop-Hkcs ('拷贝失败（目标文件可能被占用）：' + $dest + ' —— ' + $_.Exception.Message)
+                if ($state -eq 'denied') {
+                    Stop-Hkcs ('拷贝被拒绝（不是"被占用"，是**权限/只读**）：' + $dest + "`r`n" +
+                               '        · 如果你是在某个受限沙箱/自动化里跑本脚本 → 换成你自己的终端（双击 .cmd）就行；' + "`r`n" +
+                               '        · 否则检查文件是否只读，或该目录的 ACL。' + "`r`n" +
+                               '        原始报错：' + $_.Exception.Message)
+                }
+                Stop-Hkcs ('拷贝失败（目标文件被 Unity / 游戏占用）：' + $dest + ' —— ' + $_.Exception.Message)
             }
-            Write-HkcsWarn '目标文件被占用，2 秒后重试 ...'
+            Write-HkcsWarn '目标文件还被占用着，2 秒后重试 ...'
             Start-Sleep -Seconds 2
         }
     }

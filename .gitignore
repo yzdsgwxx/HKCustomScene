@@ -43,6 +43,11 @@ tools/_backup/
 *.bak-*
 *.bak
 
+# ---- Unity 自动生成的工程文件（每次打开 Unity 都会变，别跟踪）----
+# 注意：FinalMod\ 和 MonoBehaviours\ 里那两个 csproj 是手写的，必须跟踪，别被下面的规则误伤
+Assembly-CSharp*.csproj
+*.sln
+
 # ---- 操作系统杂物 ----
 Thumbs.db
 Desktop.ini

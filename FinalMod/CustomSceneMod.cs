@@ -56,12 +56,25 @@ namespace HKCustomSceneMod
         {
             return new List<ValueTuple<string, string>>
             {
+                // ── 原版组件（都来自同一个场景，预载是加载耗时大头，尽量少换场景）──
                 // 区域名 / 子区域名显示
                 new ValueTuple<string, string>("White_Palace_18", "Area Title Controller"),
                 // PlayMaker 名字显示（Dream Nail 名字等）依赖它
                 new ValueTuple<string, string>("White_Palace_18", "_Managers/PlayMaker Unity 2D"),
                 // 场景管理器（每间房都需要，SceneChanger 会给每个房间实例化一份）
                 new ValueTuple<string, string>("White_Palace_18", "_SceneManager"),
+
+                // ── 长椅（存档点）──
+                // Crossroads_47 是带长椅的最小场景（Benchwarp 的 ObjectCache 用的也是这一条）。
+                // 长椅必须整只克隆：坐下/存档逻辑在它自带的 "Bench Control" FSM 里。
+                new ValueTuple<string, string>("Crossroads_47", "RestBench"),
+
+                // ── 原版小怪（两只同场景，只多一次场景预载）──
+                new ValueTuple<string, string>("Crossroads_01", "Zombie Runner"),
+                new ValueTuple<string, string>("Crossroads_01", "Fly"),
+                // ⚠ 路径名写错不会拖垮别的预载：API 只会打一行
+                //    "could not load 'Crossroads_01/xxx.prefab'"，然后这一条就是 null，
+                //    PatchEnemy 会打红字并且什么都不放。换名字重试即可。
             };
         }
 

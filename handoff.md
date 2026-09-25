@@ -11,6 +11,10 @@
 > <https://github.com/yzdsgwxx/HKCustomScene>（`master`，153 文件 / 2.4 MB）。
 > 两件事的根因、证据与坑都在 **0.19**（含一处对「Steam 不响应」的更正：其实是沙箱禁命名管道）。**
 >
+> **2026-09-25 23:2x 追加：新增「椅子（存档长椅）+ 原版小怪」的实现 —— 预载 + 克隆这一套，
+> 文件是 `FinalMod/Patchers/PatchBench.cs`、`PatchEnemy.cs`（+ MonoBehaviours 里的空壳），
+> 权威预载路径 `("Crossroads_47", "RestBench")` 来自 Benchwarp。详见 **0.20**（含对 0.18「Unity 锁 dll」的更正）。**
+>
 > **先读第 0 节，再看 0.11（最新，含一处重大更正）。第 1～9 节是"许可证故障"阶段的历史记录，其中第 6 节列的"尚未完成"已被第 0 节取代。**
 >
 > **2026-09-25 05:3x 追加（本会话）：① 阶段三有了详细手册 [`教学-阶段三-详细操作.md`](教学-阶段三-详细操作.md)（第 11～20 步逐步操作 + 14.0 节讲清 `_Managers`/`__Initializer`）；② 修了 `RoomNames.cs` 键名不一致、`FinalMod.csproj` 资源条件化；③ ⚠️ **重大更正：本机其实装了空洞骑士**（`D:\APP\steam.exe\steamapps\common\Hollow Knight\`，API v77 + SFCore 均已装），**FinalMod 现已实测编译通过（0 警告 0 错误）**。详见 0.11。**
@@ -600,6 +604,62 @@ Steam 拉起的那份就弹这个框。证据链：
    另：全局 `user.email` 是 `yzdsgwxx@gmial.com`（**gmial 拼错**），GitHub 可能不把这个提交算到你账号名下，需要就去改 `git config --global user.email`。
 
 **顺带**：`.git` 原来 54.1 MB 全是用户那次中断的 `git add` 留下的游离对象，已 `git gc --prune=now` 收到 **2.0 MB**。
+
+### 0.20 椅子 + 原版小怪（2026-09-25 23:0x~23:2x）：先反编译查证，再落地代码
+
+**用户要求**：房间里能放**椅子（存档长椅）**和**原版小怪**；并说明做法 = `preload` GameObject +
+用（UnityExplorer 之类）工具找原版对象路径，然后 preload 就够了。
+
+**查证到的硬事实（全部来自反编译，工具见本节末尾）**
+
+| # | 事实 | 证据 |
+|---|---|---|
+| 1 | 长椅的类**不叫 `Bench`，叫 `RestBench`**，本体只有 30 行（trigger 里 `heroCtrl.NearBench(true/false)`，玩家层 = 9） | 反编译 `Assembly-CSharp.dll` |
+| 2 | 坐下/存档逻辑在长椅自带的 **PlayMaker FSM `Bench Control`**（状态 `Idle`/`In Range`/`Rest Burst`，事件 `IN RANGE`）；`HeroController.SetBenchRespawn` → `PlayerData.SetBenchRespawn` | 同上 + Benchwarp 的 `BenchMaker` |
+| 3 | 存档点 = `PlayerData.respawnScene` + `respawnMarkerName` + `respawnType`，**marker 名就是长椅的物体名** | `Benchwarp.Bench.SetBench()` / `DEPLOYED_BENCH_RESPAWN_MARKER_NAME = "DeployedBench"` |
+| 4 | **权威预载路径 = `("Crossroads_47", "RestBench")`**（带长椅的最小场景）；原版长椅 tag=`RespawnPoint`、z≈0.02、子物体 `Lit`、FSM 变量 `Tilter`/`Tilt Amount`/`Adjust Vector` | 反编译用户装着的 `Benchwarp.dll`：`ObjectCache.GetPreloadNames()` + `BenchMaker.MakeDeployedBench()` + `BenchStyle.ApplyFsmAndPositionChanges()` |
+| 5 | **同名小怪会共用击杀记录**：`PersistentBoolItem.SetMyID()` 里 `if (string.IsNullOrEmpty(persistentBoolData.id)) persistentBoolData.id = name;` | 反编译 `PersistentBoolItem` |
+| 6 | 预载路径写错**不会**拖垮别的预载：`Modding.Preloader` 只打 `could not load '场景/路径.prefab'` 然后跳过 ⇒ 加一只名字不确定的怪是安全的 | 反编译 `Modding.Preloader` |
+| 7 | 小怪对象名（`Crossroads_01` 场景数据里搜出来的）：`Zombie Runner`（爬虫）、`Fly`（苍蝇）、`Bursting Zombie` | 二进制扫 `level37` |
+
+**本轮改动（`dotnet build` 全部 0 警告 0 错误）**
+
+| 文件 | 内容 |
+|---|---|
+| `FinalMod/Patchers/PatchBench.cs`（新） | 克隆长椅：唯一名字 + tag=`RespawnPoint` + z=0.02 + 可选 `Adjust Vector`（留 0 就不动原值）；找不到 `Bench Control` FSM 会告警 |
+| `FinalMod/Patchers/PatchEnemy.cs`（新） | 克隆小怪（`Kind`: ZombieRunner/Fly），**强制唯一化** `PersistentBoolItem` 的 `id`/`sceneName`，绕开同名共存档的坑 |
+| `MonoBehaviours/PatchBench.cs`、`MonoBehaviours/PatchEnemy.cs`（新） | Unity 侧空壳（字段 + 嵌套枚举与真工程**逐字一致**） |
+| `FinalMod/PrefabHolder.cs` | 加 3 个 `Grab`（BenchPrefab / ZombieRunnerPrefab / FlyPrefab）；`Grab` 失败时**额外打印该场景预载成功的路径**，方便直接换名字 |
+| `FinalMod/CustomSceneMod.cs` | `GetPreloadNames()` 加 3 条：`Crossroads_47/RestBench`、`Crossroads_01/Zombie Runner`、`Crossroads_01/Fly` |
+
+**校验（都做了）**：壳 dll 与真 dll 的字段用 Cecil 逐个比对 = **完全一致**；壳 dll 只引用 `mscorlib` +
+`UnityEngine.CoreModule`（没混进 HK 程序集）；新壳 dll（**5120 B**）已装进 `Assets\Assemblies`，
+Unity 已重启、`Editor.log` 无编译错误、命令桥恢复应答（pid 7516）。
+
+**⚠ 更正 0.18 的一个"已实测"结论**：0.18 里写"Unity 会独占锁定 `Assets\Assemblies` 里的 dll"——**那是沙箱假象**。
+真相：该目录在 `workspace-write` 下对我的进程只读（连 `SFCore.dll.meta` 都写不了，与 Unity 是否运行无关）；
+本轮 `danger-full-access` 下实测：**Unity 开着时那个 dll 也是可写的**。
+⇒ 重启 Unity 的真正理由只是**让编辑器重新加载程序集**（否则场景里还是旧组件字段）。
+脚本"先让 Unity 退出 → 再覆盖 → 再启动"的顺序仍然正确（更安全），不用改。
+
+**顺手修掉脚本两个真 bug**（`tools/HKCS.Common.ps1`）
+1. `Get-HkcsUnityProcessForProject`：CIM 能列出进程却读不到 `CommandLine` 时会返回空列表 → 被误判成
+   "Unity 已退出"，于是在 Unity 还攥着 dll 的时候去覆盖（本轮就是这么卡住的）。现在这种情况保守地按
+   "所有 Unity 进程"处理。
+2. 新增 `Get-HkcsFileLockState`（`ok`/`locked`/`denied`/`missing`）：`Wait-HkcsUnityExit` 改成
+   **"工程锁放开 且 目标 dll 不再被占用"** 才算退干净；拷贝失败的报错能区分**被占用**与**权限/只读**。
+   （四种状态都实测过：Unity 开着时工程锁 = locked、dll = ok、普通文件 = ok、不存在 = missing。）
+
+**还没验证（需要用户进游戏）**
+
+1. `Zombie Runner` / `Fly` 这两个预载**路径名对不对** —— 不对时 ModLog 会打
+   `could not load 'Crossroads_01/<路径>.prefab'`，配合新增的"预载成功的路径"日志换名字即可；
+2. 长椅坐下后存档记的**是不是本房间的场景名**（若记成 `Crossroads_47`，需要补 3 行 C# 显式写
+   `PlayerData.SetBenchRespawn(当前场景, "HKCS_Bench", …)`）；
+3. 房间要**有地面**（小怪和长椅都靠地面），即 0.19 里那个"整屏黑/房间没铺满"的问题要先解决。
+
+**工具（在仓库外，不进 git）**：`D:\HKModding\_decomp` = 用 ILSpy 的反编译引擎写的命令行反编译器
+（`dotnet hkcs.decomp.dll <dll> <输出目录> <类型全名>...`）。本轮所有"源码级事实"都出自它。
 
 ### 0.8 给新 Agent 的继续提示词（本节优先）
 
