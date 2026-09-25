@@ -3,7 +3,7 @@
   打包测试.ps1 —— 改完 Unity 场景之后，一条命令走完全套「打包 → 安装 → 进游戏」
 
   它按顺序做这 5 件事（就是你平时手点的那 5 步）：
-    1. 让 Unity 跑一遍菜单 Build AssetBundles → Build AssetBundles Compressed
+    1. 让 Unity 跑一遍打包（菜单 HKModCustomSceneTool → Build AssetBundles Compressed，等价于 HKModCustomSceneTool → 打包测试 的第一步）
        （不用你切窗口点菜单：脚本通过工程里的 Assets\Editor\HKCSBuildBridge.cs
          给编辑器发命令；桥要是还没生效，会退回「你点菜单、脚本盯着文件等」）
     2. 把 Assets\AssetBundles\ 里打出来的包拷进 FinalMod\Resources\
@@ -79,7 +79,7 @@ try {
     }
 
     # ------------------------------------------------------------------
-    Write-HkcsStep '1/5 打包 AssetBundle（Build AssetBundles Compressed）'
+    Write-HkcsStep '1/5 打包 AssetBundle（HKModCustomSceneTool → Build AssetBundles Compressed）'
     if ($SkipBundle) {
         Write-HkcsInfo '已跳过。'
     } else {

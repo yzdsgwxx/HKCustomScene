@@ -109,7 +109,7 @@ Unity 也没给外部程序留「点菜单」的接口。于是反过来做：�
 1. `打包测试.ps1` 往 `tools\.bridge\cmd.txt` 写一行 `cmd=build_bundles`；
 2. 编辑器里的 `HKCSBuildBridge.cs`（`[InitializeOnLoad]` + `EditorApplication.update`，每 0.4 秒看一眼）
    读到命令 → 保存打开的场景 → `BuildPipeline.BuildAssetBundles(..., BuildAssetBundlesOptions.None, StandaloneWindows64)`
-   （和菜单 **Build AssetBundles → Build AssetBundles Compressed** 完全等价）；
+   （和菜单 **HKModCustomSceneTool → Build AssetBundles Compressed** 完全等价；整套流程也能直接从 Unity 菜单 **HKModCustomSceneTool → 打包测试** 启动）；
 3. 结果写到 `tools\.bridge\result.<id>.txt`，脚本读它并继续后面的步骤。
 
 实测：Unity 在前台/后台都能应答（后台约 0.6 秒）。**不用切窗口、不用点菜单、不用关 Unity。**

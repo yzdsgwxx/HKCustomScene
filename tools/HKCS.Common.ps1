@@ -467,7 +467,7 @@ function Invoke-HkcsUnityBundleBuild {
         Show-HkcsUnityWindow -Paths $Paths
         Write-HkcsInfo ('等 Unity 刷新 + 编译（最多 ' + $TimeoutSec + ' 秒）；桥一旦生效就自动打包，不用你点菜单。')
         Write-HkcsWarn '如果一直没动静，就手动点一下 Unity 窗口，或者点菜单：'
-        Write-HkcsWarn '    Build AssetBundles → Build AssetBundles Compressed'
+        Write-HkcsWarn '    HKModCustomSceneTool → 打包测试（或 Build AssetBundles Compressed）'
 
         $deadline  = (Get-Date).AddSeconds($TimeoutSec)
         $lastPing  = Get-Date

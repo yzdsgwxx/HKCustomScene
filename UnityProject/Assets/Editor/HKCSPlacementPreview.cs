@@ -52,8 +52,74 @@ internal static class HKCSPlacementPreview
     private static double _nextSync;
     private static bool _loggedOnce;
 
-    /// <summary>鼠标按下时命中的摆放点（用来判断抬起时要不要接管选择）。</summary>
-    private static GameObject _pressedOwner;
+    /// <summary>
+    /// 点击预览后要"按住"的选择，以及按住到什么时候。
+    ///
+    /// 为什么要按住 + 为什么要按**时间**算：
+    /// 预览物体是 HideInHierarchy ⇒ 实测 `HandleUtility.PickGameObject` 返回 null
+    /// （Unity 完全看不见它），于是 Unity 把点击当成「点空白处」→ 它的"取消选择"会在这之后跑，
+    /// 把我们的选择清掉 —— 表现就是"选中后立马又被取消"。
+    /// 上一版用"按住 N 帧"是错的：编辑器 300+ fps 时几帧只有几十毫秒，等不到清空就过期了。
+    /// 现在按住 0.8 秒，并且挂在 Selection.selectionChanged 上，谁改都扳回来；
+    /// 一旦点击了别处（没命中预览）立刻解除，不影响正常操作。
+    /// </summary>
+    private static GameObject _holdOwner;
+    private static double _holdUntil;
+    private const double HoldSeconds = 0.8;
+
+    private static void BeginHold(GameObject owner)
+    {
+        if (owner == null) return;
+        _holdOwner = owner;
+        _holdUntil = EditorApplication.timeSinceStartup + HoldSeconds;
+        Selection.activeGameObject = owner;
+        EditorApplication.delayCall += ReassertSelection;   // 本帧稍后再补一次
+    }
+
+    private static void ReassertSelection()
+    {
+        if (_holdOwner == null) return;
+        if (EditorApplication.timeSinceStartup > _holdUntil) { _holdOwner = null; return; }
+        if (Selection.activeGameObject != _holdOwner)
+        {
+            Selection.activeGameObject = _holdOwner;
+        }
+    }
+
+    /// <summary>
+    /// 诊断用：Unity 每次改选择都记一条（谁被选中、hotControl 状态）。
+    /// 用来判断"点击预览时 Unity 到底选中了什么" —— 如果日志里出现
+    /// `selection -> [预览] 长椅 …`，说明 Unity 其实**能**原生点中预览物体，
+    /// 那就应该改用"原生选中 + 自动把选择改成摆放点"的方案，而不是自己射线拾取。
+    /// </summary>
+    private static void OnSelectionChangedDiag()
+    {
+        GameObject go = Selection.activeGameObject;
+        Debug.Log(string.Format("[HKCS][Preview][diag] selection -> {0}   (hotControl={1}, holding={2})",
+            go != null ? go.name : "<null>", GUIUtility.hotControl, _holdOwner != null));
+
+        // 万一 Unity 自己选中了预览物体（它能原生点中的话），自动把选择换成真正的摆放点
+        if (go != null)
+        {
+            foreach (KeyValuePair<int, Entry> kv in _entries)
+            {
+                Entry e = kv.Value;
+                if (e.Preview == go && e.Owner != null)
+                {
+                    Selection.activeGameObject = e.Owner;
+                    return;
+                }
+            }
+        }
+
+        ReassertSelection();
+    }
+
+    private static void ClearHold()
+    {
+        _holdOwner = null;
+        _holdUntil = 0;
+    }
 
     private static bool Enabled
     {
@@ -75,6 +141,8 @@ internal static class HKCSPlacementPreview
     {
         EditorApplication.update += Tick;
         SceneView.duringSceneGui += OnSceneGui;
+        // 谁改选择都扳回来（只在"按住"期间生效）；同时记一条诊断日志（定位完就删）
+        Selection.selectionChanged += OnSelectionChangedDiag;
     }
 
     [MenuItem("工具/HKCS 预览/开关预览物体")]
@@ -94,33 +162,32 @@ internal static class HKCSPlacementPreview
     {
         if (Event.current == null) return;
         if (Event.current.button != 0 || Event.current.alt) return;
+        if (Event.current.type != EventType.MouseDown) return;   // 实测：Unity 不把 MouseUp 送进来
 
-        if (Event.current.type == EventType.MouseDown)
-        {
-            // 按下时命中预览 → 记住它，并接管这次点击
-            _pressedOwner = PickOwner(Event.current.mousePosition);
-            if (_pressedOwner == null) return;
+        // 三条原则（都是被实测逼出来的）：
+        //   1. 在 MouseDown 就动手 —— MouseUp 收不到，等他等不到；
+        //   2. **不吞事件**（不调用 Use()）—— 移动 Gizmo 的手柄就画在预览范围内，
+        //      吞掉 MouseDown 会让拖拽起不来；
+        //   3. 不拿 hotControl 当总闸门（Scene 视图里它常常本来就是 2）——
+        //      只在「正在拖别的东西」时才让路，见下面那行。
+        GameObject owner = PickOwner(Event.current.mousePosition);
 
-            Selection.activeGameObject = _pressedOwner;
-            Event.current.Use();
-            SceneView.RepaintAll();
-            return;
-        }
+        // 诊断（定位完删）：Unity 自己的拾取能不能看见预览物体？
+        GameObject unityPick = HandleUtility.PickGameObject(Event.current.mousePosition, false);
+        Debug.Log(string.Format("[HKCS][Preview][diag] MouseDown mine={0} unityPick={1} hotControl={2}",
+            owner != null ? owner.name : "<none>",
+            unityPick != null ? unityPick.name : "<null>",
+            GUIUtility.hotControl));
 
-        if (Event.current.type == EventType.MouseUp)
-        {
-            // 只有「按下时命中的就是它」才在抬起时再兜一次；
-            // 这样框选/拖拽不会被抢（那时 mouseDown 命中的不是预览）
-            if (_pressedOwner == null) return;
-            GameObject owner = PickOwner(Event.current.mousePosition);
-            if (owner == _pressedOwner)
-            {
-                Selection.activeGameObject = owner;
-                Event.current.Use();
-                SceneView.RepaintAll();
-            }
-            _pressedOwner = null;
-        }
+        if (owner == null) { ClearHold(); return; }             // 点了别处 ⇒ 正常取消选择
+
+        // ⚠ 这里**不能**再拿 hotControl 当守卫：
+        //   实测（05:xx 的日志）Scene 视图里 hotControl 恒为 2，而"当前没选中任何东西"时
+        //   `Selection.activeGameObject != owner` 也恒为真 ⇒ 守卫永远成立 ⇒ 选中逻辑被整个跳过
+        //   （用户看到的就是"根本选不中"）。
+        //   而且这个守卫本来就不必要：Gizmo 只能拖**已选中**的物体，点预览只是把选择设成它自己，
+        //   选择没变化 ⇒ 不会打断拖拽。
+        BeginHold(owner);
     }
 
     /// <summary>鼠标位置命中的预览物体对应哪个摆放点（用精灵包围盒做射线求交）。</summary>
@@ -154,6 +221,9 @@ internal static class HKCSPlacementPreview
     // ────────────────────────────────────────────────────────────────
     private static void Tick()
     {
+        // 维护"点击预览后按住的选择"（Unity 的取消选择会晚一步，见 BeginHold 的注释）
+        if (_holdOwner != null) ReassertSelection();
+
         if (EditorApplication.timeSinceStartup < _nextSync) return;
         _nextSync = EditorApplication.timeSinceStartup + 0.3;
 

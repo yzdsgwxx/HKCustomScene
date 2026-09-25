@@ -19,7 +19,7 @@
   作用只是让 Unity 能把组件挂到物体上、能把字段值序列化进 `.unity`。
   **不要在这里写任何逻辑，也不要引用空洞骑士的程序集。**
 - `Editor/` — 编辑期工具，只在编辑器里跑，不会进游戏包。
-  - `CreateAssetBundles.cs`：菜单 `Build AssetBundles/*` 打场景包 → 输出到 `Assets/AssetBundles/`
+  - `CreateAssetBundles.cs`：菜单 `HKModCustomSceneTool/*` 打场景包 → 输出到 `Assets/AssetBundles/`
   - `MeshCollisionCreator.cs`：MeshFilter 组件右上角 `⋮` → `Create Collision` 自动生成 `PolygonCollider2D`
   - `CameraLockAreaEditor.cs`：在 Scene 视图画出相机锁定区域
   - `CameraModeSwitch.cs`：菜单 `Camera/Orthographic` 切排序模式

@@ -798,6 +798,287 @@ GameObject 那样，大小固定、缩放时跟着缩放，跟真物体的区别
 - ⚠ 又验证了一次：**焦点切换不会触发编译**（`Assembly-CSharp-Editor.dll` 时间戳不动），
   只有「退出 Unity → 删 `Library\ScriptAssemblies\*` → 重启」才能强制重编 —— 记牢这条。
 
+### 0.25 用户反馈：选中闪一下就被取消（2026-09-26 00:1x）+ 停止自动推送
+
+**用户要求（两条）**
+1. ⚠ **不要再自动 commit / push** —— 「我这边验证还没通过呢」。以后除非用户明确要求，一律**只在本地改文件**，
+   改完告诉用户改了哪些文件，由用户自己决定是否提交/推送。（本条对所有后续会话有效。）
+2. Bug：**点击预览后选中会立刻被取消**。
+
+**Bug 根因**：预览物体是 `HideInHierarchy` ⇒ Unity 的拾取点不中它，于是把这次点击当成「点了空白处」，
+而 Unity 自身「点空白处 = 取消选择」的逻辑在**同一个事件里后跑**，把我设在 `MouseDown` 里的
+`Selection.activeGameObject` 清掉了 —— 表现就是"选中后立马又被取消"。
+
+**修法（v2，已编译生效；v1 是错的）**
+- ❌ v1（错）：按"按住 4 帧"实现 —— 编辑器 300+ fps，4 帧只有十几毫秒，
+  而 Unity 的"取消选择/改选别的物体"发生在**松开鼠标那一刻**（几百毫秒之后）⇒ 按住早过期了，
+  用户反馈"根本没修好"。
+- ✅ v2（现行）：
+  - `BeginHold(owner)`：`_holdOwner` + `_holdUntil = now + 0.8 秒`，并立即设一次 Selection，
+    再 `EditorApplication.delayCall` 补一次；
+  - `Tick()` 每次 update 检查；**另外挂 `Selection.selectionChanged += ReassertSelection`**，
+    按住期间**谁改选择都扳回摆放点**（Unity 抢成地形/清空都能盖住）；
+  - **点别处（没命中预览）立刻 `ClearHold()`** ⇒ 不影响用户正常"点空白取消选择"；
+  - 框选/拖拽仍不受影响（只有按下时命中的那个才在抬起时接管）。
+- 已验证：强制重编后程序集字段含 `_holdOwner / _holdUntil / HoldSeconds`、
+  无 `error CS`、`已生成 3 个预览物体 … isDirty = False -> False` ✓。
+  （**能否彻底解决要用户点一下确认** —— agent 无法在 Unity 里点鼠标。）
+
+**备选方案（若 v2 仍不行）**：让预览物体**重新可被 Unity 原生拾取**（去掉 `HideInHierarchy`，
+把它们放到一个折叠的 `[HKCS 预览]` 父物体下，层级里只有一行），Unity 选中预览后由
+`Selection.selectionChanged` **自动把选择改成摆放点** —— 这条路不跟 Unity 的事件顺序抢，最稳。
+
+**追加：选中好了，但"拖不动 Gizmo"（2026-09-26 00:1x）**
+- 用户反馈：能选中了，但用移动 Gizmo 拖不动位置。
+- 根因：**我在 MouseDown 里调了 `Event.current.Use()` 把事件吞了**，而移动 Gizmo 的手柄
+  正好画在长椅预览的范围内 ⇒ Unity 的拖拽永远起不来。
+- 修法：`OnSceneGui` 里
+  1. **不再吞事件**（删掉两处 `Event.current.Use();`）；
+  2. 开头加 `if (GUIUtility.hotControl != 0) return;` —— 正在拖任何手柄时一律让路；
+  3. 选择稳定性仍由 `BeginHold`（0.8 秒时间窗）+ `Selection.selectionChanged` 兜底，不依赖吞事件。
+- 已验证：重编后无 `error CS`、代码里已无 `Event.current.Use();`（只剩注释）、预览正常生成 ✓。
+- **仍未提交/未推送**（工作区：两份 `HKCSPlacementPreview.cs` + `HKCS_Room01.unity` + `handoff.md`）。
+
+### 0.26 菜单改名 + 相机不跟随的真因（2026-09-26 00:2x）
+
+**(A) 用户要求：把「打包测试」放进 Unity 菜单，菜单根 `Build AssetBundles` 改名 `HKModCustomSceneTool`**
+
+- `CreateAssetBundles.cs`：两个菜单项改成 `HKModCustomSceneTool/Build AssetBundles Compressed|Uncompressed`。
+- 新增 `Assets/Editor/HKCSMenu.cs`：
+  · `HKModCustomSceneTool/打包测试` ⇒ 启动 `tools\打包测试.cmd`（`UseShellExecute`，跑完窗口自己关；日志在 `tools\_log\`）；
+  · 另加 `打开 tools 目录` / `打开日志目录（tools\_log）`。
+- **验证方式（可复用）**：清程序集重启后，用 Cecil 读 `Assembly-CSharp-Editor.dll` 里所有 `MenuItem` 特性，
+  打印出的就是真实菜单路径 —— 本轮读到的正是
+  `HKModCustomSceneTool/打包测试`、`…/Build AssetBundles Compressed|Uncompressed` ✓。
+- ⚠ 我自己又踩了一次 `System.Diagnostics.Debug` vs `UnityEngine.Debug` 的 CS0104（写 `HKCSMenu.cs` 时），
+  它会让**整个 `Assembly-CSharp-Editor` 编译失败**（编辑器命令桥、预览、Hierarchy 图标全跟着失效）。
+  已在文件里加 `using Debug = UnityEngine.Debug;` 修好。
+
+**(B) 用户报告：坐上长椅 → 退到菜单重进后，相机锁住、不跟随骑士**
+
+**根因（反编译 `CameraController` 原文）**
+```csharp
+private void GetTilemapInfo() {            // 相机范围的唯一来源
+    tilemap = gm.tilemap;
+    sceneWidth  = tilemap.width;
+    sceneHeight = tilemap.height;
+    xLimit = sceneWidth  - 14.6f;          // 半个屏幕
+    yLimit = sceneHeight -  8.3f;
+}
+// Start(): GetTilemapInfo(); xLockMin = 0; xLockMax = xLimit; yLockMin = 0; yLockMax = yLimit;
+// DoPositionToHero(): 只再调 GetTilemapInfo()（更新 xLimit/yLimit），**不更新锁定框**
+```
+自定义房间没有 tk2dTileMap（`Player.log`：`Failed to find tilemap in HKCS_Room01 entirely.`），
+`gm.tilemap` 拿到的是别的场景的 fallback；锁定框又只在 `Start()` 初始化一次、之后靠原版房间里的
+`CameraLockArea` 触发器刷新（我们没有）⇒ **锁定框退化成零尺寸 ⇒ 相机进场定位一次就再也不跟随**。
+
+**修法（`FinalMod/SceneChanger.cs`）**
+1. `OnRefreshTilemapInfo` 里**删掉** `self.tilemap.width/height = room.*` —— 那是在改**别的场景的 fallback tilemap**，
+   会把那个原版房间的尺寸改坏（真 bug）；
+2. 新增 `FixCameraLimits(room)`：按 HK 自己的公式设
+   `cam.sceneWidth/Height = 房宽/房高`、`xLimit = 房宽-14.6`、`yLimit = 房高-8.3`、
+   锁定框 `xLock 0~xLimit` / `yLock 0~yLimit`，并打一行日志 `[HKCS] 相机范围设为 …`。
+- 已验证：`dotnet build` 0 警告 0 错误。**要进游戏验证**需先跑一次「打包测试」（游戏里那份 dll 才会更新）。
+- 备选/原生做法：在房间里放一个覆盖整间房的 `CameraLockArea`（骨架里有这个壳 + 编辑器可视化），
+  HK 自己就会刷新锁定框；做分区锁镜头时仍需要它。
+
+**(C) 顺带验证：预览与游戏实测完全一致**
+`[HKCS] 长椅本体(sprite=town_bench) 世界边界 … 宽 2.859 … ⇒ 脚 -0.113` ⇒
+宽 **2.859** = 预览常量 `BenchWorldWidth = 2.86` ✓，轴心偏移 **0.59** = `BenchOriginLift = 0.59` ✓。
+唯一差别是**美术风格**：原版这间房用的是 `town_bench`，预览现在用 `bone_bench`（`town_bench` 没被导成独立 Sprite，
+多半在 sactx 图集里；要换得从图集裁）。
+
+**仍未提交/未推送**（工作区见 `git status`，用户明确要求不要自动 commit/push）。
+
+### 0.27 相机不跟随的真因 = `GameManager.tilemap == null`（2026-09-26 00:3x）—— 补上 `TileMap` 替身
+
+**用户报告**：① 坐上长椅 → 退出到菜单重进后，视角不居中到骑士身上、锁住不动、也不跟随骑士；
+② 相机**右边界限制不对**（能看到房间外的黑）。
+
+**(1) 0.26(B) 只诊断对了一半**
+
+0.26(B) 的结论是"锁定框只在 `Start()` 初始化一次、之后靠 `CameraLockArea` 刷新，我们没有 ⇒ 退化"。
+方向没错（相机范围确实得我们自己给），但**漏了"抛异常"这一层**。用户这次运行的
+`Player-prev.log`（0:30:12 关闭的那一次）里，每次进 HKCS_Room01 都稳定有下面这些，而且
+**两个相机异常都是 `CameraController.GetTilemapInfo()` 第一行 `tilemap = gm.tilemap` 的 NRE**：
+
+```
+Using fallback 1 to find tilemap. Scene HKCS_Room01 requires manual fixing.
+Using fallback 2 to find tilemap. Scene HKCS_Room01 requires manual fixing.
+Failed to find tilemap in HKCS_Room01 entirely.
+NullReferenceException at CameraController.GetTilemapInfo()                     ← 行 4204
+  ← CameraController.SceneInit() ← GameCameras.StartScene() ← GameManager.BeginScene()
+NullReferenceException at CameraController.GetTilemapInfo()                     ← 行 4224
+  ← CameraController+<DoPositionToHero>d__74.MoveNext()
+NullReferenceException at GameMap.GetTilemapDimensions() ← GameMap.Start()      ← 行 4218
+```
+
+- NRE 证明 `gm.tilemap` **就是 null**（若真拿到"别的场景的 fallback"就**不会** NRE）。
+  从菜单 Continue 进房时 GameManager 是新的、`tilemap` 从未被赋值 —— 正好是用户描述的那条路径。
+- `SceneInit()` 在 `GetTilemapInfo()` 抛异常 ⇒ 它后面那几行 `xLockMin/xLockMax = xLimit…` **根本没跑**，
+  `xLimit/yLimit` 保持上一个场景的旧值 ⇒ **右边界不对**（`xLimit = sceneWidth - 14.6`）。
+- `DoPositionToHero` 协程在同一个位置抛异常 ⇒ **协程中断** ⇒ 相机不定位、不居中、
+  `mode` 也不会切回 `FOLLOWING` ⇒ **锁住 + 不跟随**；连它末尾那句
+  `cameraFadeFSM "LEVEL LOADED"` 都发不出去。
+- `GameMap.Start()` 在同一处 NRE ⇒ 地图界面同样是坏的。
+
+**(2) 修法：给它一个真的 `tk2dTileMap`（官方教程 `PatchTileMap` 那条线，本仓库自己实现）**
+
+| 文件 | 改动 |
+|---|---|
+| `FinalMod/TileMapFix.cs`（**新**） | 进我们的房间时，往**该场景的根物体**里补一个 `TileMap`（tag `TileMap` + `tk2dTileMap`，宽高 = 房间表）；顺手把地形网格 / 碰撞体的**实测包围盒**打进日志 |
+| `FinalMod/SceneChanger.cs` | ① `OnRefreshTilemapInfo` 里**在 `orig` 之前**先 `TileMapFix.Ensure(...)`；② 动 `self.tilemap` 之前先确认它**就是我们补的那个**（0.26(B)"别乱动 tilemap"的顾虑仍然成立）；③ 新增 `On.CameraController.GetTilemapInfo` 兜底钩子：房间内直接按房间表写 `sceneWidth/sceneHeight/xLimit/yLimit`，并把那个 NRE 吞掉 |
+| `FinalMod/Consts/RoomNames.cs` | `Room01` 由 **64×32 → 60×17** |
+
+**60×17 是实测出来的**：直接用 UnityPy 读 AssetBundle 得到
+`Mesh "default" 的 AABB = x[0,30] y[0,17]`，而场景 `TutorialScene` 下有两个 mesh 子物体（local x=0 与 x=30）
+⇒ 地形 **x[0,60]、y[0,17]**；场景里两个 `PolygonCollider2D` 分别是 [0,30] 和 [30,60] ✓ 完全吻合。
+相机边界 = `Width-14.6` / `Height-8.3` ⇒ 填 64×32 时右边界多跑 4 格、上边界多跑 15 格
+⇒ **走到房间右端就能看到房间外的黑**，正是用户说的"右边界限制不对"。
+
+**(3) 两个额外发现（重要）**
+
+1. ⚠ **磁盘上的 `.obj` 与 Unity 导入出来的网格不一致**：`Assets/Meshes/TutorialScene.obj` 里顶点是
+   `x ∈ [-30,0]`，但 AssetBundle 里网格 AABB 是 `x ∈ [0,30]`（两个碰撞体也是按 `[0,30]` 生成的）。
+   现在游戏里是自洽的（[0,60] 与碰撞体、门、房间表都对得上），但**哪天 Unity 真按文件重新导入，
+   地形会整体左移 30**，碰撞/门/房间表全对不上。要么把 .obj 顶点改成 `0..30` 与现状一致，要么查清偏移来源。
+2. `right1` 在 x=60.99、`left1` 在 x=-1.02（都在地形边缘外一点点）—— 符合"门摆在地面边缘外"的惯例，
+   但原版把相机左边界写死成 x=0、右边界 = Width ⇒ 门在视野外那一小段，骑士会走出屏幕才触发切换。
+
+**(4) 还没验证 / 下一步**
+
+- ❌ **没进游戏验证**（需要用户操作）：先**关掉正在运行的骑士**（dll 被内存映射，覆盖会失败），
+  再双击 `tools\打包测试.cmd`。进游戏后日志里应该出现：
+  - `[HKCS] HKCS_Room01 里没有 tk2dTileMap → 已补一个空替身（tag=TileMap，60x17）。`
+  - `[HKCS] HKCS_Room01 地形网格实测：x[0.00 ~ 60.00]（宽 60.00）、y[0.00 ~ 17.00]（高 17.00）`
+  - `[HKCS] 相机边界兜底：HKCS_Room01 → xLimit …`
+  - 并且**不再出现** `Failed to find tilemap in HKCS_Room01 entirely.` 与那两个 `CameraController.GetTilemapInfo` NRE。
+- ❌ "空 `tk2dTileMap` 在玩家端安全"是从反编译推的（`Awake()` 只在
+  `spriteCollection != null && data != null && renderData == null` 时才 `Build()`，我们三项都是 null ⇒ 什么都不做），
+  **没有实机跑过**；若日志里冒出 tk2d 相关报错，第一嫌疑就是它。
+- ⚠ `OnGetTilemapInfo` 只在"当前场景是房间表里的场景"时才改数据，原版场景一个字不动。
+- ⚠ `All` 表里 `Room02/Room03` 的尺寸仍是占位值（那两个场景还没做）。
+- 仍未提交 / 未推送（用户明确要求不要自动 commit/push）。
+
+**(5) 新建房间（Room02/03…）的检查清单 —— 就算照着 Room01 摆，也要逐条过**
+
+| # | 必须做 | 不做会怎样 |
+|---|---|---|
+| 1 | `Consts/RoomNames.cs` 的 `Rooms.All` 加一行 `RoomDef`，**Width/Height = 地形网格实测跨度** | **不登记**：`Rooms.Get` 返回 null ⇒ 不补 TileMap、不设相机边界 ⇒ **本节那串 NRE 原样重现**（相机锁死+边界错+地图坏）；登记但尺寸写错：右/上边露出房间外的黑 |
+| 2 | 地形从 **(0,0)** 开始铺 | 原版把相机左边界写死 x=14.6、下边界写死 y=8.3 ⇒ x<0 / y<0 的部分玩家永远看不到 |
+| 3 | 场景资源的 **AssetBundle 名 = `hkcs_scenes`**（Inspector 最底部） | 包里没这个场景 ⇒ 启动日志 `[HKCS] 场景包里找不到房间 XXX` |
+| 4 | `_Managers` + `__Initializer`（菜单 **Tools/HKCS/生成 __Initializer**，自动挂 3 个组件） | 少 SceneManagerPatcher ⇒ 氛围/音乐不对；少 PatchAreaTitleController ⇒ 没有区域名 |
+| 5 | 地形 Layer=`Terrain`(8)、MeshFilter `⋮` → **Create Collision**、材质 | 没碰撞 ⇒ 掉出地图；Layer 不对 ⇒ 与骑士/小怪的碰撞关系不对 |
+| 6 | 出入口：`TransitionPoint` + `BoxCollider2D`（**Is Trigger 勾上**、Offset=(0,0)、Size=(1,4)）+ targetScene/entryPoint/alwaysEnterLeft\|Right + **`respawnMarker` 挂 HazardRespawnMarker** | 0.17 的"落地自弹"；respawnMarker 为空 ⇒ 0.13 那个 `PlayerData.SetHazardRespawn` NRE |
+| 7 | 椅子/小怪：摆 `PatchBench` / `PatchEnemy` 空物体即可（运行时从原版 prefab 克隆） | 没摆就没有 |
+| 8 | 区域名：只有**区域第一间房** `SubArea=false`；每间房要不同小标题就各给不同 `AreaEvent`（`AreaInfo` / `CreateInitializer` / `SettingsClass` 三处键名必须一致） | 全程只弹一次区域名，或标题空白 |
+| 9 | 房间之间的门：`BuildRoomLinks` / `CreateGateway` **目前是死代码**（无人调用），`ResolveRedirect` 也只写了 Room01 的两个方向 ⇒ 第二间房要在 Unity 手填门，或在 `OnSceneChanged` / `ResolveRedirect` 里加分支 | 走不到第二间房 |
+
+**本节新增的两条自动体检（避免"再犯一次"，都在 `TileMapFix.LogGeometry`）**
+- 地形左下角 < −0.5 ⇒ 红字"没有从 (0,0) 开始铺"；
+- 房间表与地形实测宽/高相差 > 1 ⇒ 红字"宽度/高度对不上，把 Consts/RoomNames.cs 改成实测值"。
+- 另：`CustomSceneMod.OnSceneChanged` 里加了"名字带 `HKCS_` 前缀但没登记进 `Rooms.All` ⇒ 红字报出来"（防静默失败）。
+
+### 0.28 放小怪：可用怪种 + 实测路径 + 完整操作（2026-09-26 00:4x）
+
+**用户要求**：教我放置小怪。
+
+**(1) 关键事实：原版小怪不在场景根，`GetPreloadNames()` 要的是「从场景根算起的完整层级路径」**
+
+这次不靠猜：用 UnityPy 直接读游戏自己的场景文件（`level37` = `Crossroads/Crossroads_01`、
+`level43` = `Crossroads/Crossroads_07`），把 `_Enemies` 整棵子树列出来：
+
+| 怪种 | 来源场景 | 层级路径（= 预载路径） | 原版 `BoxCollider2D` 宽×高（offset y） |
+|---|---|---|---|
+| 僵尸行者 `ZombieRunner` | Crossroads_01 | `_Enemies/Zombie Runner` | 1.219 × 1.625（−0.625）|
+| 爬虫 `Crawler` | Crossroads_01 | `_Enemies/Crawler 1` | 1.422 × 0.906（−0.609）|
+| 攀爬虫 `Climber` | Crossroads_01 | `_Enemies/Climber` | 1.094 × 0.922（+0.477）|
+| 复仇苍蝇 `Fly` | **Crossroads_07** | `Uninfected Parent/Fly` | 0.891 × 0.844 |
+
+- `Crossroads_01` 的 `_Enemies` 下**只有** `Climber` / `Climber 1` / `Crawler 1` / `Zombie Runner` 四只，
+  **没有苍蝇**（连场景根的 `Fly` 也没有）。
+- ⚠ 0.20/0.21 把 `Fly` / `Fly Left` / `Fly Right` 当场景物体是**误判**：这三个字符串确实在 level37 里，
+  但它们是**爆裂僵尸 FSM 的变量/状态名**（同处还有 `TurnToFly`），不是 GameObject。
+  ⇒ 苍蝇只能换场景拿（`Crossroads_07`），代价 = 启动时多一次整场景加载。
+
+**(2) 代码改动（`dotnet build` 两工程各自 0 警告 0 错误；Cecil 已比对两侧字段/枚举完全一致）**
+
+| 文件 | 改动 |
+|---|---|
+| `FinalMod/Patchers/PatchEnemy.cs` | ① 枚举**末尾追加** `Crawler = 2`、`Climber = 3`（数字已经进 `.unity`，只能追加不能插值/改名）；② 新增 `public float Z = -0.5f` 并用它定位 —— 以前直接拿摆放点的 position，而从别的物体复制出来的空物体常带 `z=-15/-22`，小怪会盖到骑士和长椅前面（用户的 `Enemy01` 就是 `z=-22.93`）；③ `Id` 留空时自动用**摆放点物体名**（以前统一叫 `_0`，两只留空的怪会共用击杀记录）；④ 日志带怪种/坐标/z/有没有 `PersistentBoolItem` |
+| `MonoBehaviours/PatchEnemy.cs` | 逐字同步（枚举 + `Kind`/`Id`/`Z`）|
+| `FinalMod/PrefabHolder.cs` | 新增 `CrawlerPrefab` / `ClimberPrefab`；4 个路径数组换成**实测的单条路径**（见上表）|
+| `FinalMod/CustomSceneMod.cs` | `GetPreloadNames()` 从"10 条瞎猜"改成上表 4 条 —— **一条都不多请求**（请求不存在的路径，API 每次启动都刷红字）|
+
+**(3) 用户操作顺序（关键：枚举变了 ⇒ 必须先换壳 dll）**
+
+1. 双击 `tools\更新壳工程.cmd`（编译壳工程 → 关 Unity → 覆盖 `Assets\Assemblies\HKCustomSceneMod.dll` → 开 Unity）；
+2. Unity 里摆：空物体（名字如 `Enemy01`）→ `Add Component → PatchEnemy` → `Kind` 选怪种、`Id` **留空**、`Z` 保持 `-0.5`；
+3. 双击 `tools\打包测试.cmd`；
+4. 看 `ModLog.txt` 应有 `[HKCS] Crossroads_01：命中预载路径 _Enemies/Crawler 1` 与
+   `[HKCS] 放了小怪 HKCS_Crawler_Enemy01（Crawler）@ (x, y, z=-0.5)`。
+
+**(4) 用户房间里已经有 `Enemy01`（场景文件 0:43 保存）**
+
+`Kind: 0`（僵尸行者，本来就能用）、`Id` 空、位置 `(26.86, 4.39, -22.93)`。
+那个 `z=-22.93` 就是本轮 `Z` 字段要修的东西；新增字段对已摆好的组件自动取默认值（−0.5），用户不用手改。
+房间地形实测（同一套扫描）：地板碰撞盒 `y[0,2]`，`y[6,17]` 是一块**中间挖空的实心块**（空心 `x[2,28]`）
+⇒ 骑士走的通道是 `y≈2~6`。落地怪放地面附近即可（有 `Rigidbody2D` 会自己落地）；**苍蝇是悬停的，放多高就飞多高**。
+⚠ 通道左右**没有墙**（只有地板 + 上方悬空块），爬虫会一路走到地板尽头掉下去 —— 想留住它们得在 Unity 里补墙。
+
+**(5) 还没验证**：4 条路径里只有 `_Enemies/Zombie Runner` 有运行时佐证（0:33 那次预载只报了
+`_Enemies/Zombie Runner 1` 等失败，没报它）；其余 3 条只在**离线场景数据**里验证存在，
+`Crossroads_07` 这条还会新增一次预载 —— 进游戏看那 4 行"命中预载路径"即可确认全部可用。
+编辑器预览里小怪目前统一用苍蝇图、宽 1.0（占位）；上表的实测尺寸可以拿去改 `HKCSPlacementPreview.cs`。
+
+### 0.29 「怪在爬空气」的真因 = Climber 是 kinematic 零重力 + 自动落地（2026-09-26 00:5x）
+
+**先说好消息（0:49:59 那次运行实测）**：0.27 的相机修复**已在游戏里生效** ——
+`ModLog` 里有 `[HKCS] HKCS_Room01 里没有 tk2dTileMap → 已补一个空替身（tag=TileMap，60x17）`、
+`相机范围设为 xLimit=45.4 yLimit=8.7`，而这次 `Player.log` 里
+**`GetTilemapInfo` / `Failed to find tilemap` / `Using fallback` / `GetTilemapDimensions` 全部 0 条**（以前每次进场都有）。
+0.28 的 4 条小怪路径**全部命中**（`_Enemies/Zombie Runner` / `_Enemies/Crawler 1` / `_Enemies/Climber` / `Uninfected Parent/Fly`）。
+
+**用户报的现象**：截图里那只怪**在空气里爬**（位置换算 = Climber，与日志 `Climber @ (9.27, 3.92)` 对上）。
+
+**真因（用游戏自己的场景数据量的）**
+
+| 怪 | layer | Rigidbody2D | 会不会落地 |
+|---|---|---|---|
+| `_Enemies/Climber` | 11 | **bodyType=1 Kinematic、gravityScale=0** | **永远不掉** |
+| `_Enemies/Crawler 1` | 11 | Dynamic、gravityScale=1 | 会掉 |
+| `_Enemies/Zombie Runner` | 11 | Dynamic、gravityScale=1 | 会掉 |
+| `Uninfected Parent/Fly` | 11 | Dynamic、**gravityScale=0** | 不掉（悬停）|
+
+⇒「摆放点放高一点，反正会掉下来」这个直觉对 **Climber** 是错的：它是 kinematic + 零重力的**贴表面爬**怪
+（靠射线/接触判断自己贴着哪个面），在离地 1.9 格的地方出生就永远贴不上，只能在空气里按原方向爬。
+它的轴心还几乎就在脚底（脚相对轴心 **+0.02**），所以必须**贴着表面**摆。
+（用户把 4 只都摆在 y≈3.9，而房间地面在 y=2；Crawler 脚 −1.06、ZombieRunner 脚 −1.44。）
+
+**修法（`FinalMod/Patchers/PatchEnemy.cs`；⚠ 纯逻辑、没有新字段 ⇒ 这次不用跑「更新壳工程」）**
+- `Start()` 起协程 → `yield return new WaitForFixedUpdate()`（等一个物理帧，保证场景地形碰撞体已进物理世界，
+  Awake 阶段打射线可能打空）→ 从**摆放点**向下 `Physics2D.Raycast` 50 格，只打
+  `LayerMask.GetMask("Terrain")`（查不到名字就退回 `1 << 8`）→ 把怪的**碰撞盒底边**放到命中点：
+  `newY = hit.point.y - (col.bounds.min.y - cur.y)`；
+- **苍蝇跳过**（零重力悬停，放多高飞多高）；
+- 打不到地面 → 红字 + 保持原高度（提示摆放点要在地面上方，别埋进碰撞体/房间外）；
+- 每只落地打一行 `[HKCS] <怪名> 落地：摆放点 y=… → y=…（地面 y=…，脚偏移 …）`；
+- 顺手：把"没有 PersistentBoolItem"的提示改成"普通小怪不记击杀状态（每次进房间重刷），正常"；
+  `ValidateRooms` 的报错改成三种可能（含"这间房还没做，忽略这条"）。
+
+**用户下一步**：直接 `tools\打包测试.cmd`（**不用**先跑更新壳工程）；进游戏应看到
+`[HKCS] HKCS_Climber_Enemy (3) 落地：摆放点 y=3.92 → y=1.98（地面 y=2，脚偏移 0.02）` 这类行。
+
+**顺带发现（未处理，记下来）**
+- `Player.log` 里有两条 `GameObject contains a component type that is not recognized` +
+  `The referenced script (Unknown) on this Behaviour is missing!`（进房间之前，紧接 `Unloading 47 Unused Serialized files`）
+  ⇒ 场景/包里**有 2 个组件在游戏里解析不出来**，最可能是从原版 prefab 带进来的
+  `PlayMakerFSM` / `AudioMixerSnapshot` **占位脚本**（`_MonoScripts/ReplacementStuff/` 里的占位类 guid 与真正的
+  PlayMaker.dll guid 不同 ⇒ 编辑器能保存、运行时认不出）。我们的 `PatchEnemy`/`PatchBench`/`PatchAreaTitleController`
+  都正常执行了，所以不是它们；待查是哪个物体上的。
+- 一条 `GameManager.SetupHeroRefs` 的 NRE，上下文是 `Performing automatic level start.` + `Couldn't find a Hero`
+  = 菜单场景的已知现象，与本房间无关。
+
 ### 0.8 给新 Agent 的继续提示词（本节优先）
 
 > 工作区 `D:\HKModding`，项目 `hkmod-custom-scene`。**先读本文件第 0 节**，再读 `README.md`、`教学-从零理解.md`。

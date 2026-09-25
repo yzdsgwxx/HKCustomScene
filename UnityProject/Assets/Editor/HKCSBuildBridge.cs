@@ -4,7 +4,7 @@
 //         <仓库根>\tools\.bridge\cmd.txt。看到命令就执行，然后把结果写到
 //         <仓库根>\tools\.bridge\result.<id>.txt。
 //
-// 为什么要它：tools\打包测试.ps1 需要「运行 Build AssetBundles Compressed」。
+// 为什么要它：tools\打包测试.ps1 需要「运行打包」（菜单 HKModCustomSceneTool → Build AssetBundles Compressed）。
 //             Unity 不允许第二个实例打开同一个工程，所以不能一边开着编辑器一边用
 //             -batchmode 打包；而 Unity 也没有给外部程序留「点菜单」的接口。
 //             于是让编辑器自己轮询一个命令文件，就能做到「不关 Unity、不用手点」。
@@ -12,7 +12,7 @@
 // 支持的命令（cmd.txt 是 key=value 文本，一行一个）：
 //   ping            —— 探活，脚本用它判断桥是否已生效
 //   build_bundles   —— 保存打开的场景 + AssetDatabase.SaveAssets + BuildPipeline.BuildAssetBundles
-//                      （BuildAssetBundleOptions.None = 和菜单 "Build AssetBundles Compressed" 完全一致）
+//                      （BuildAssetBundleOptions.None = 和菜单 "HKModCustomSceneTool → Build AssetBundles Compressed" 完全一致）
 //   quit            —— 保存打开的场景后正常退出编辑器（供「更新壳工程」重启 Unity 用）
 //
 // 手工测试：把 cmd.txt 写成下面两行，然后点一下 Unity 窗口：

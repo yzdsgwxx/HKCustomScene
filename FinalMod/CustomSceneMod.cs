@@ -70,23 +70,21 @@ namespace HKCustomSceneMod
                 new ValueTuple<string, string>("Crossroads_47", "RestBench"),
 
                 // ── 原版小怪 ──
-                // ⚠ 实测：写 "Zombie Runner" / "Fly" **预载不到**（API 报
-                //    could not load 'Crossroads_01/Zombie Runner.prefab'）—— 原版怪不在场景根。
-                //    下面把所有候选一次都请求了，PrefabHolder 会挑第一个能用的并把命中的路径打进日志。
-                //    要确认真实路径：看 ModLog 里 [HKCS][Dump] 打出来的层级路径（ScenePathDump.cs）。
+                // ⚠ 路径**不是猜的**：2026-09-26 用 UnityPy 直接读游戏自己的场景文件
+                //    （level37 = Crossroads/Crossroads_01、level43 = Crossroads/Crossroads_07）得到。
+                //    Crossroads_01 的 `_Enemies` 下只有这四只：Climber / Climber 1 / Crawler 1 / Zombie Runner。
+                //    这里**一条都不多请求**：请求了不存在的路径，API 每次启动都会打一行红字
+                //    `could not load '场景/路径.prefab'`（以前那一堆候选就是这样刷屏的）。
                 new ValueTuple<string, string>("Crossroads_01", "_Enemies/Zombie Runner"),
-                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Zombie Runner 1"),
-                new ValueTuple<string, string>("Crossroads_01", "Enemies/Zombie Runner"),
-                new ValueTuple<string, string>("Crossroads_01", "Zombie Runner"),
-                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Fly"),
-                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Fly Left"),
-                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Fly Right"),
-                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Fly 1"),
-                new ValueTuple<string, string>("Crossroads_01", "Enemies/Fly"),
-                new ValueTuple<string, string>("Crossroads_01", "Fly"),
-                // ⚠ 路径名写错不会拖垮别的预载：API 只会打一行
-                //    "could not load 'Crossroads_01/xxx.prefab'"，然后这一条就是 null，
-                //    PatchEnemy 会打红字并且什么都不放。换名字重试即可。
+                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Crawler 1"),
+                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Climber"),
+
+                // 苍蝇：Crossroads_01 里**没有**独立苍蝇物体（那里的 "Fly"/"Fly Left"/"Fly Right"
+                // 只是爆裂僵尸 FSM 里的变量/状态名），所以只能换个场景拿 —— 多一个来源场景
+                // = 启动时多一次整场景加载，这是苍蝇唯一的额外代价。
+                new ValueTuple<string, string>("Crossroads_07", "Uninfected Parent/Fly"),
+                // ⚠ 加新怪种要改三处：这里、PrefabHolder 的路径数组、PatchEnemy 的枚举（末尾追加）。
+                //    枚举改了还要跑一次 `tools\更新壳工程.cmd`，否则 Unity 里选不到新怪种。
             };
         }
 
@@ -135,6 +133,18 @@ namespace HKCustomSceneMod
 
             // B. 玩家在原版场景里 → 把该场景的入口门改指向我们的第一间房
             //    ⚠ 两个方向的落点**不一样**：Town 侧落 left1（西），Crossroads 侧落 right1（东）。
+
+            // ⚠ 名字带 HKCS_ 前缀却没登记进 Rooms.All 的场景：尺寸/相机边界/地图/TileMap
+            //    全都不会被接管 ⇒ 会原样重现 2026-09-26 那串 CameraController.GetTilemapInfo NRE
+            //    （相机锁死、不居中、不跟随）。这种情况必须大声报出来，别让它静默失败。
+            if (scene.StartsWith(Rooms.Prefix, StringComparison.Ordinal))
+            {
+                Modding.Logger.LogError(string.Format(
+                    "[HKCS] 场景 {0} 有 '{1}' 前缀，但不在 Consts/RoomNames.cs 的 Rooms.All 里 —— " +
+                    "尺寸/相机边界/地图/TileMap 都没人接管（相机会锁死、不跟随）。加一行 RoomDef 即可。",
+                    scene, Rooms.Prefix));
+            }
+
             // （调试）把关键物体的层级路径打进日志，用来找 GetPreloadNames 要写的路径字符串
             ScenePathDump.TryDump(to);
 

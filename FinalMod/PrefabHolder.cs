@@ -22,36 +22,37 @@ namespace HKCustomSceneMod
         /// <summary>原版长椅（存档点）。来源 Crossroads_47 —— 带长椅的最小场景，Benchwarp 用的也是这一条。</summary>
         public static GameObject BenchPrefab { get; private set; }
 
-        /// <summary>原版小怪：爬虫（Crossroads_01 里的 "Zombie Runner"）。</summary>
+        /// <summary>原版小怪：僵尸行者（`_Enemies/Zombie Runner`，1.22×1.63）。</summary>
         public static GameObject ZombieRunnerPrefab { get; private set; }
 
-        /// <summary>原版小怪：复仇苍蝇（Crossroads_01 里的 "Fly"）。和爬虫同一个场景，不额外增加预载开销。</summary>
+        /// <summary>原版小怪：复仇苍蝇（`Crossroads_07` 的 `Uninfected Parent/Fly`，0.89×0.84）。
+        /// ⚠ `Crossroads_01` 里**没有**独立苍蝇物体（那里的 "Fly"/"Fly Left"/"Fly Right" 只是
+        /// 爆裂僵尸 FSM 里的变量/状态名），所以苍蝇必须多预载一个来源场景。</summary>
         public static GameObject FlyPrefab { get; private set; }
 
-        /// <summary>
-        /// 小怪的候选预载路径。
-        /// ⚠ 实测：直接写 `Zombie Runner` / `Fly` **预载不到**（API 报
-        /// `could not load 'Crossroads_01/Zombie Runner.prefab'`）—— 原版怪不在场景根，
-        /// 多半在 `_Enemies` 之类的父物体下。所以这里一次多请求几个候选，运行时挑第一个能用的；
-        /// 命中哪个会打进日志。要确认真实路径：让 ScenePathDump 把场景层级打出来照着改。
-        /// </summary>
-        private static readonly string[] ZombieRunnerPaths =
-        {
-            "_Enemies/Zombie Runner",
-            "_Enemies/Zombie Runner 1",
-            "Enemies/Zombie Runner",
-            "Zombie Runner",
-        };
+        /// <summary>原版小怪：爬虫（`_Enemies/Crawler 1`，1.42×0.91）。和僵尸同一个场景，零额外预载开销。</summary>
+        public static GameObject CrawlerPrefab { get; private set; }
 
-        private static readonly string[] FlyPaths =
-        {
-            "_Enemies/Fly",
-            "_Enemies/Fly Left",
-            "_Enemies/Fly Right",
-            "_Enemies/Fly 1",
-            "Enemies/Fly",
-            "Fly",
-        };
+        /// <summary>原版小怪：攀爬虫（`_Enemies/Climber`，1.09×0.92）。和僵尸同一个场景，零额外预载开销。</summary>
+        public static GameObject ClimberPrefab { get; private set; }
+
+        /// <summary>
+        /// 小怪的预载路径（**物体在场景里的完整层级路径**）。
+        ///
+        /// ⚠ 下面这些是 2026-09-26 用 UnityPy 直接读游戏自己的场景文件得到的，不是猜的：
+        ///   `level37` = `Crossroads/Crossroads_01`（`_Enemies` 下只有 Climber / Climber 1 / Crawler 1 / Zombie Runner）
+        ///   `level43` = `Crossroads/Crossroads_07`（苍蝇在 `Uninfected Parent` 下）
+        /// 加新怪种时：先离线扫场景拿到路径（或看运行时日志里 `[HKCS] [Dump]` 打出来的层级路径），
+        /// 再把路径同时加进这里**和** `CustomSceneMod.GetPreloadNames()` —— 两处必须一字不差。
+        /// 路径写错不会拖垮别的预载：API 只打一行 `could not load '场景/路径.prefab'` 然后跳过。
+        /// </summary>
+        private static readonly string[] ZombieRunnerPaths = { "_Enemies/Zombie Runner" };
+
+        private static readonly string[] CrawlerPaths = { "_Enemies/Crawler 1" };
+
+        private static readonly string[] ClimberPaths = { "_Enemies/Climber" };
+
+        private static readonly string[] FlyPaths = { "Uninfected Parent/Fly" };
 
         public static void Preloaded(
             Dictionary<string, Dictionary<string, GameObject>> preloadedObjects,
@@ -64,9 +65,11 @@ namespace HKCustomSceneMod
             // 长椅（路径已实测可用）
             BenchPrefab = Grab(preloadedObjects, "Crossroads_47", "RestBench", logger);
 
-            // 小怪（路径按候选列表试）
+            // 小怪（路径已实测；Crossroads_01 提供 3 种，苍蝇从 Crossroads_07 单独预载）
             ZombieRunnerPrefab = GrabFirst(preloadedObjects, "Crossroads_01", ZombieRunnerPaths, logger);
-            FlyPrefab = GrabFirst(preloadedObjects, "Crossroads_01", FlyPaths, logger);
+            CrawlerPrefab = GrabFirst(preloadedObjects, "Crossroads_01", CrawlerPaths, logger);
+            ClimberPrefab = GrabFirst(preloadedObjects, "Crossroads_01", ClimberPaths, logger);
+            FlyPrefab = GrabFirst(preloadedObjects, "Crossroads_07", FlyPaths, logger);
         }
 
         private static GameObject Grab(

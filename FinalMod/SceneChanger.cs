@@ -68,12 +68,15 @@ namespace HKCustomSceneMod
             On.GameManager.RefreshTilemapInfo += OnRefreshTilemapInfo;
             // 所有场景切换（不管触发者是 TransitionPoint 还是 PlayMaker FSM）最终都会走这一条
             On.GameManager.BeginSceneTransition += OnBeginSceneTransition;
+            // 相机兜底：没补上 tilemap 时原版这个方法会 NRE，把相机彻底带坏（见 OnGetTilemapInfo 注释）
+            On.CameraController.GetTilemapInfo += OnGetTilemapInfo;
         }
 
         public void Unhook()
         {
             On.GameManager.RefreshTilemapInfo -= OnRefreshTilemapInfo;
             On.GameManager.BeginSceneTransition -= OnBeginSceneTransition;
+            On.CameraController.GetTilemapInfo -= OnGetTilemapInfo;
         }
 
         // ────────────────────────────────────────────────────────────────
@@ -158,7 +161,8 @@ namespace HKCustomSceneMod
                 if (!found)
                 {
                     _logger.LogError(string.Format(
-                        "[HKCS] 场景包里找不到房间 {0} —— Unity 里那个场景的 AssetBundle 名没设，或名字不一致",
+                        "[HKCS] 场景包里找不到房间 {0} —— 三种可能：① 这间房还没做（RoomNames 里先登记了，忽略这条）；" +
+                        "② Unity 里那个场景的 AssetBundle 名没填 hkcs_scenes；③ 场景名不一致",
                         room.Scene));
                 }
             }
@@ -175,15 +179,46 @@ namespace HKCustomSceneMod
         private void OnRefreshTilemapInfo(On.GameManager.orig_RefreshTilemapInfo orig,
                                           GameManager self, string targetScene)
         {
+            RoomDef room = Rooms.Get(targetScene);
+
+            // ★ 顺序是关键：必须在 orig **之前**把替身 tk2dTileMap 准备好。
+            //   原版 orig 会去场景根物体里找「tag = TileMap 且挂 tk2dTileMap」的物体，
+            //   找到才会写 GameManager.tilemap 以及 sceneWidth/sceneHeight。
+            //   没有它的后果（Player-prev.log 实测）：gm.tilemap == null
+            //   → CameraController.GetTilemapInfo() 抛 NRE → 相机不居中、不跟随、
+            //   xLimit/yLimit 永远停留在上一个场景的旧值。详见 TileMapFix.cs。
+            tk2dTileMap ensured = (room == null)
+                ? null
+                : TileMapFix.Ensure(targetScene, room, _logger);
+
             orig(self, targetScene);
 
-            RoomDef room = Rooms.Get(targetScene);
             if (room == null) return;
 
-            self.tilemap.width = (int)room.Width;
-            self.tilemap.height = (int)room.Height;
+            // ⚠ 只有「确认 self.tilemap 就是我们刚补的那个（= 属于这间房）」才动它。
+            //   拿不到时它可能是**别的原版场景残留的 tilemap**（fallback），
+            //   改它的 width/height 会把那个原版房间的地图/相机尺寸一起改坏。
+            if (ensured != null && self.tilemap == ensured)
+            {
+                self.tilemap.width = (int)room.Width;
+                self.tilemap.height = (int)room.Height;
+            }
+            else if (self.tilemap == null)
+            {
+                _logger.LogError("[HKCS] " + targetScene +
+                    " 还是没能拿到 tilemap（相机只能靠 OnGetTilemapInfo 兜底，地图会 NRE）");
+            }
+
             self.sceneWidth = room.Width;
             self.sceneHeight = room.Height;
+
+            // ★ 相机范围必须我们自己设：
+            //   CameraController.GetTilemapInfo() 是 `xLimit = tilemap.width - 14.6f; yLimit = tilemap.height - 8.3f;`
+            //   而它的 xLockMin/Max/yLockMin/Max 只在 Start() 里由 xLimit/yLimit 初始化一次，
+            //   之后要靠原版房间里的 CameraLockArea 触发器才会刷新 —— 我们的房间没有，
+            //   于是锁定框一直是最初的退化值 ⇒ 相机进场定位一次后就**不再跟随**骑士。
+            //   这里按 HK 自己的公式补上，并把锁定框设成整间房。
+            FixCameraLimits(room);
 
             GameMap map = UObject.FindObjectOfType<GameMap>();
             if (map != null)
@@ -196,6 +231,90 @@ namespace HKCustomSceneMod
 
             _logger.Log(string.Format("[HKCS] {0} 尺寸设为 {1}x{2}",
                 targetScene, room.Width, room.Height));
+        }
+
+        /// <summary>
+        /// 把相机范围/锁定框设成这间房的尺寸（照抄 HK 自己的算法）。
+        /// HK 原版：xLimit = 房宽 - 14.6，yLimit = 房高 - 8.3（14.6 / 8.3 是半个屏幕），
+        /// 相机中心被夹在 [14.6, xLimit] × [8.3, yLimit] 之间，锁定框默认就是整间房。
+        /// </summary>
+        private void FixCameraLimits(RoomDef room)
+        {
+            try
+            {
+                if (GameCameras.instance == null) return;
+                CameraController cam = GameCameras.instance.cameraController;
+                if (cam == null) return;
+
+                cam.sceneWidth = room.Width;
+                cam.sceneHeight = room.Height;
+                cam.xLimit = room.Width - 14.6f;
+                cam.yLimit = room.Height - 8.3f;
+                cam.xLockMin = 0f;
+                cam.xLockMax = cam.xLimit;
+                cam.yLockMin = 0f;
+                cam.yLockMax = cam.yLimit;
+
+                _logger.Log(string.Format("[HKCS] 相机范围设为 xLimit={0:0.#} yLimit={1:0.#}（锁定框 0~{0:0.#} / 0~{1:0.#}）",
+                    cam.xLimit, cam.yLimit));
+            }
+            catch (System.Exception e)
+            {
+                _logger.LogError("[HKCS] 设相机范围失败：" + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// 相机兜底。
+        ///
+        /// 原版 <c>CameraController.GetTilemapInfo()</c> 只有四行：
+        /// <code>
+        /// tilemap = gm.tilemap;  sceneWidth = tilemap.width;  sceneHeight = tilemap.height;
+        /// xLimit = sceneWidth - 14.6f;  yLimit = sceneHeight - 8.3f;
+        /// </code>
+        /// <c>gm.tilemap</c> 为 null 时它在第一行就抛 NRE。而这个方法被两处调用：
+        /// <list type="bullet">
+        /// <item><c>CameraController.SceneInit()</c>（进场瞬间，由 GameCameras.StartScene 调）
+        /// ⇒ 抛异常后 <c>xLimit/yLimit</c> 保持上一个场景的旧值（边界错、能看到房间外的黑）；</item>
+        /// <item><c>CameraController.&lt;DoPositionToHero&gt;()</c>（落点/重生时）
+        /// ⇒ **协程直接中断**：相机不回正到骑士身上、mode 也不会切回 FOLLOWING
+        /// （就是"坐上长椅退到菜单重进后相机锁住、不跟随"的直接原因），
+        /// 连它末尾那句 <c>cameraFadeFSM "LEVEL LOADED"</c> 都发不出去。</item>
+        /// </list>
+        /// TileMapFix 补上 TileMap 之后这里本该什么都不用做；这层兜底是为了
+        /// 「万一 tilemap 还是没补上」时相机也一定对（我们的房间尺寸来自房间表，比 tilemap 更权威）。
+        /// </summary>
+        private void OnGetTilemapInfo(On.CameraController.orig_GetTilemapInfo orig, CameraController self)
+        {
+            string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            RoomDef room = Rooms.Get(scene);
+            if (room == null)
+            {
+                orig(self);          // 原版场景：一个字都不改，走原逻辑
+                return;
+            }
+
+            float oldX = self.xLimit;
+            try
+            {
+                orig(self);
+            }
+            catch (NullReferenceException)
+            {
+                // gm.tilemap == null —— 由下面的兜底负责
+            }
+
+            self.sceneWidth = room.Width;
+            self.sceneHeight = room.Height;
+            self.xLimit = room.Width - TileMapFix.CameraHalfWidth;
+            self.yLimit = room.Height - TileMapFix.CameraHalfHeight;
+
+            if (self.xLimit != oldX)
+            {
+                _logger.Log(string.Format(
+                    "[HKCS] 相机边界兜底：{0} → xLimit {1:0.#} → {2:0.#}（房间 {3}x{4}）",
+                    scene, oldX, self.xLimit, room.Width, room.Height));
+            }
         }
 
         // ────────────────────────────────────────────────────────────────

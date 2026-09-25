@@ -39,10 +39,20 @@ namespace HKCustomSceneMod.Consts
         public const string Room02 = Prefix + "Room02";
         public const string Room03 = Prefix + "Room03";
 
+        // ── Width / Height 到底该填多少 ─────────────────────────────────
+        // 相机边界**直接**由这两个数算出来（原版 CameraController）：
+        //     xLimit = Width - 14.6   yLimit = Height - 8.3   （14.6 / 8.3 = 半个屏幕，写死的）
+        // 相机中心被夹在 [14.6, xLimit] × [8.3, yLimit] ⇒ 相机视野恰好覆盖 x[0,Width] y[0,Height]。
+        // ⇒ 硬规矩：**地形必须从 (0,0) 开始铺**，Width/Height 必须等于地形网格的实际跨度，
+        //    否则走到边上就会看到房间外的黑（写大了）或看不全房间（写小了）。
+        // 2026-09-26 实测（直接读 AssetBundle 里的网格 AABB + 场景里的 PolygonCollider2D）：
+        //     HKCS_Room01 = 两块 30 宽的 mesh 拼起来 ⇒ x[0,60]、y[0,17]
+        // ⇒ 之前填的 64x32 就是"相机右边界限制不对"的原因（右多 4 格、上多 15 格）。
+        // 进游戏后日志里有 "[HKCS] <房间> 地形网格实测：x[…] y[…]"，照它校准即可。
         public static readonly List<RoomDef> All = new List<RoomDef>
         {
             //                                 scene    w    h   fromPrev  toNext    title
-            new RoomDef(Room01, 64f, 32f, "left1",  "right1", true),
+            new RoomDef(Room01, 60f, 17f, "left1",  "right1", true),
             new RoomDef(Room02, 48f, 48f, "left1",  "right1", false),
             new RoomDef(Room03, 32f, 96f, "left1",  "right1", false),
         };
