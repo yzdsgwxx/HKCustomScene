@@ -786,6 +786,18 @@ GameObject 那样，大小固定、缩放时跟着缩放，跟真物体的区别
 **资产解包（本轮完成）**：UnityPy 全量导出 **8983 张 sprite / 128 MB / 355 个子目录** →
 `D:\HKModding\_hkassets\export\`（清单 `sprites_all.json`）；脚本 `tools\hkextract\*.py`。
 
+**补充（00:0x，按用户要求）**
+- 预览物体加 **`HideFlags.HideInHierarchy`** ⇒ **不出现在层级列表里**（Scene 视图照常渲染、缩放跟随）；
+  层级里只剩用户自己的摆放点（`Bench` / `Bench (1)` / `Bench (2)` …）。
+- **点预览 = 选中真正的摆放点**：隐藏物体 Unity 默认点不中，所以在 `duringSceneGui` 里自己拾取
+  （`HandleUtility.GUIPointToWorldRay` + `SpriteRenderer.bounds.IntersectRay`）。
+  收紧过：只有**按下时命中**的那个才在 `MouseUp` 接管选择（`_pressedOwner`），
+  这样**框选/拖拽不会被抢**。命中时会打一行 `[HKCS][Preview] 选中摆放点：<名字>`。
+- 实测：用户的点击已经验证通过（日志里出现 `选中摆放点：Bench / Bench (1) / Bench (2)`）；
+  重编后 `已生成 3 个预览物体 … isDirty = False -> False` ✓。
+- ⚠ 又验证了一次：**焦点切换不会触发编译**（`Assembly-CSharp-Editor.dll` 时间戳不动），
+  只有「退出 Unity → 删 `Library\ScriptAssemblies\*` → 重启」才能强制重编 —— 记牢这条。
+
 ### 0.8 给新 Agent 的继续提示词（本节优先）
 
 > 工作区 `D:\HKModding`，项目 `hkmod-custom-scene`。**先读本文件第 0 节**，再读 `README.md`、`教学-从零理解.md`。
