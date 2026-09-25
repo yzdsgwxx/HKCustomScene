@@ -717,6 +717,39 @@ Unity 已重启、`Editor.log` 无编译错误、命令桥恢复应答（pid 751
 **用户下一步**：`tools\打包测试.cmd` → 看 `ModLog.txt` 里那行"长椅实测边界 … 脚比摆放点低 N"，
 如果长椅还差一点没落地，就把 `YOffset` 加上 N（Inspector 里直接改，不用改代码）。
 
+### 0.23 解包 HK 原版资产（2026-09-25 23:4x）：UnityPy 实测可行，椅子 Gizmo 已换原版图
+
+**背景**：用户转述群里的话——「有 unityripper，可以解包整个空洞的 assets，直接拿来拼就行」，
+要求验证可行性、实际解包出资产文件供以后使用（例如把椅子 Gizmo 换成原版椅子图）。
+
+**结论：可行，而且不用下载任何解包器**
+- 机器上已有 **Python 3.12**；**pip 走 Python 自带的 OpenSSL**，不受本机 schannel 坏掉的影响
+  （`python -m pip install --proxy http://127.0.0.1:7899 UnityPy` 一次装好）。
+  另外 git 自带 curl / 系统 curl 访问 GitHub 都是 HTTP 200（下载通路也是通的）。
+- `D:\HKModding\FSMViewer\` 里还有 **AssetsTools.NET.dll**（备选方案，本轮没用上）。
+
+**可行性边界（要和"直接拿来拼"对齐）**
+| 资产 | 能否直接用 |
+|---|---|
+| 贴图 / 精灵 / 音频 / 字体 | ✅ 能整包导出，PNG/文件直接可用 |
+| prefab / 场景 / PlayMaker FSM / 代码 | ❌ 不能"拿来就用"：脚本是编译后的 dll；FSM 是 MonoBehaviour 数据且引用 Unity 内部类，导到新工程引用会断（只能当参考资料看结构） |
+
+**已做**
+- 脚本已收进仓库 `tools\hkextract\`：`find_assets.py`（按关键字列出 Texture2D/Sprite）、
+  `export_assets.py`（导出 PNG；`--all` 导全部 sprite）、`make_icons.py`（缩放成 Gizmo 图标）。
+  （原始工作副本在 `D:\HKModding\_hkassets\`，**仓库外**，不进 git。）
+- 已导出 175 张（长椅/小怪/图鉴图标等）→ `D:\HKModding\_hkassets\export\<assets文件>\<名字>.png`，
+  清单 `sprites.json`；后台正在跑 `--all` 全量 sprite 导出。
+- **原版长椅图 = `sharedassets76\bone_bench.png`（183×90）** —— 就是 HK 那把石椅，和游戏截图一致。
+  已缩成 64×31 换成 Gizmo 图标：`UnityProject\HKModCustomScene\Assets\Gizmos\HKCS_Bench.png`
+  （骨架 `UnityProject\Assets\Gizmos\` 同步一份）；`HKCS_Enemy.png` 换成原版复仇苍蝇
+  `sharedassets389\fly0000.png`。Unity 已重新导入（Editor.log 有 import 记录），无编译错误。
+- 以后想取别的图：`python tools\hkextract\find_assets.py <关键字>` →
+  `python tools\hkextract\export_assets.py <关键字>`。
+
+**下一步可选**：想要"能在 Unity 里直接拼"的完整工程（prefab/场景/材质）就上 **AssetRipper**
+（下载通路已验证可行）——但 FSM/脚本仍不可用，适合拆美术和查结构。
+
 ### 0.8 给新 Agent 的继续提示词（本节优先）
 
 > 工作区 `D:\HKModding`，项目 `hkmod-custom-scene`。**先读本文件第 0 节**，再读 `README.md`、`教学-从零理解.md`。
