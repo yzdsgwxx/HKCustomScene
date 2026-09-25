@@ -664,6 +664,7 @@ function Start-HkcsGame {
         $Paths,
         [switch]$LaunchExe,
         [int]$TimeoutSec = 90,
+        [int]$ModLogWaitSec = 60,
         [switch]$DryRun
     )
 
@@ -734,14 +735,32 @@ function Start-HkcsGame {
         if (-not $proc) {
             Write-HkcsWarn ('等了 ' + $TimeoutSec + ' 秒也没看到 hollow_knight 进程。')
             if ($useSteam) {
-                Write-HkcsWarn 'Steam 可能卡着对话框没处理启动请求（看一眼 Steam 窗口），必要时重启 Steam 客户端再试。'
-                Write-HkcsWarn '也可以自己从 Steam 里点开始；脚本加 -LaunchExe 则会直接启动 exe（本机不推荐，会被 DRM 重新拉起）。'
+                Write-HkcsWarn 'Steam 没把游戏拉起来。请：① 看一眼 Steam 窗口有没有弹着对话框（或 Steam 认为游戏还在运行，点一下"停止"）；'
+                Write-HkcsWarn '② 必要时重启 Steam 客户端；③ 确认这个脚本是在你自己的终端 / 双击 .cmd 里跑的 ——'
+                Write-HkcsWarn '   在受限沙箱里运行时 Steam 的进程间通信会被拦，-applaunch 根本传不到 Steam。'
+                Write-HkcsWarn '（脚本加 -LaunchExe 会直接启动 exe，但那同样要靠 Steam DRM 重新拉起，且可能撞出单实例报错。）'
             }
             continue
         }
 
         Write-HkcsOk ('游戏已启动（PID ' + $proc.Id + '）。')
         Show-HkcsProcessWindow -Ids @($proc.Id)
+
+        # 再确认一步：游戏启动时会重写 ModLog.txt，时间戳一变就说明它进了托管代码、mod 真的载入了
+        $logBefore = Get-HkcsFileStamp -Path $Paths.ModLog
+        Write-HkcsInfo ('等 mod 日志刷新（最多 ' + $ModLogWaitSec + ' 秒）...')
+        $logDeadline = (Get-Date).AddSeconds($ModLogWaitSec)
+        $logFresh = $false
+        while ((Get-Date) -lt $logDeadline) {
+            Start-Sleep -Seconds 2
+            if ((Get-HkcsFileStamp -Path $Paths.ModLog) -ne $logBefore) { $logFresh = $true; break }
+            if (@(Get-HkcsGameProcesses -Paths $Paths).Count -eq 0) { break }
+        }
+        if ($logFresh) {
+            Write-HkcsOk 'mod 日志已刷新 ⇒ 游戏进了托管代码，mod 载入成功。'
+        } else {
+            Write-HkcsWarn '还没看到 mod 日志刷新（游戏可能还在加载，也可能又退出了）。'
+        }
         Write-HkcsInfo ('游戏日志：' + $Paths.ModLog)
         return
     }

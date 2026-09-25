@@ -40,6 +40,7 @@ powershell -ExecutionPolicy Bypass -File .\更新壳工程.ps1
                -DryRun            只检查路径、只打印计划，不动任何文件
                -BuildTimeoutSec   等 Unity 打包的超时秒数（默认 900）
                -GameStartTimeoutSec  等游戏进程出现的秒数（默认 90）
+               -ModLogWaitSec     起来后再等 ModLog 刷新的秒数（默认 60）
                -LaunchExe         ⚠ 直接启动 hollow_knight.exe。默认不这么做，见下方「启动游戏」
 
 更新壳工程.ps1 -Force             不等你手动关，直接强杀 Unity（未保存的改动会丢）
@@ -59,7 +60,13 @@ Steam 拉起的那份弹 `Fatal error: Another instance is already running`
 1. 已经有一个空洞骑士在跑 → **绝不启动第二份**，只把它切到前台并提示；
 2. 否则一律 `steam.exe -applaunch 367520` 请 Steam 启动，最多等 `-GameStartTimeoutSec` 秒；
 3. 起来后看窗口标题，是 `Fatal error` 就关掉那份、等 5 秒重试一次；
-4. 还是起不来就明确报错（mod 本身已经装好，只差启动），并提示去看 Steam 是不是卡着对话框。
+4. 进程起来后，再等 `-ModLogWaitSec` 秒看 `ModLog.txt` 有没有被刷新 —— 刷新了才算「mod 真的载入了」；
+5. 还是起不来就明确报错（mod 本身已经装好，只差启动），并提示去检查 Steam。
+
+⚠ **必须在自己的终端里跑（双击 `.cmd` 就是）**：Steam 的启动请求走 Windows 命名管道（IPC），
+在受限沙箱/自动化环境里会被拦 —— 表现为 `-applaunch` 毫无反应、Steam 日志一行都不写、游戏也不出现。
+2026-09-25 22:2x 我在沙箱里就复现了这个现象（`cygwin sh.exe: couldn't create signal pipe`），
+而你自己的那次运行（22:24:56）Steam 是正常把游戏拉起来的。
 
 换机器/换安装位置时，改 `HKCS.Common.ps1` 里 `New-HkcsPaths` 的默认值，
 或每次用 `-UnityExe` / `-UnityProject` / `-GameRoot` / `-ModsFolder` 覆盖。
@@ -118,6 +125,7 @@ Unity 也没给外部程序留「点菜单」的接口。于是反过来做：�
 | `dll 比 Resources 里的文件还旧` | 场景包可能没被嵌进 dll。删掉 `FinalMod\obj\Release` 再跑一次 |
 | 打包成功但游戏里场景没变 | 检查场景最底部的 AssetBundle 名是不是 `hkcs_scenes`，以及 `FinalMod\Resources\hkcs_scenes` 的时间戳 |
 | 弹 `Fatal error: Another instance is already running` | 就是「直接启动 exe」踩了 Steam DRM（见上方「启动游戏」）。**别加 `-LaunchExe`**；脚本现在会请 Steam 启动，并在已有实例时拒绝重复启动 |
-| `等了 90 秒也没看到 hollow_knight 进程` | Steam 客户端没处理启动请求（可能弹着对话框、或卡住了）。看一眼 Steam 窗口，必要时重启 Steam 客户端再跑；mod 本身已经装好了 |
+| `等了 90 秒也没看到 hollow_knight 进程` | ① 看 Steam 窗口有没有弹着对话框，或 Steam 认为游戏还在运行（点"停止"）；② 必要时重启 Steam 客户端；③ 确认是在自己的终端/双击 `.cmd` 里跑的 —— 受限沙箱里 Steam 的命名管道 IPC 会被拦，`-applaunch` 传不到 Steam。mod 本身已经装好了 |
+| 游戏起来了但 mod 没生效 | 看脚本结尾那行：`mod 日志已刷新 ⇒ mod 载入成功`。没刷新就打开 `ModLog.txt` 看报错 |
 | `git push` 报 `schannel: AcquireCredentialsHandle failed` | 本机 Windows 的 TLS(schannel) 坏了。本仓库已设 `http.sslBackend=openssl`（见 `handoff.md` 0.19）；别的仓库遇到同样报错就 `git config --local http.sslBackend openssl` |
 | 想回到某个旧 dll | `tools\_backup\` 里按时间戳找，复制回 `Mods\CustomScene\` 即可（游戏要先关掉） |

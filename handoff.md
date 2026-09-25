@@ -7,9 +7,9 @@
 > 以后改完场景只需双击 `tools\打包测试.cmd`。详见 **0.18**。**
 >
 > **2026-09-25 22:5x 追加：① 修掉「启动游戏弹 `Another instance is already running`」（根因是直接开 exe 踩了
-> Steam DRM，已改成请 Steam 启动 + 不重复启动）；② 整个仓库已提交并推送到
-> <https://github.com/yzdsgwxx/HKCustomScene>（`master` = `f60fa99`，153 文件 / 2.4 MB）。
-> 两件事的根因、证据与坑都在 **0.19**。**
+> Steam DRM，已改成请 Steam 启动 + 不重复启动 + 用 ModLog 刷新确认 mod 真的载入）；② 整个仓库已提交并推送到
+> <https://github.com/yzdsgwxx/HKCustomScene>（`master`，153 文件 / 2.4 MB）。
+> 两件事的根因、证据与坑都在 **0.19**（含一处对「Steam 不响应」的更正：其实是沙箱禁命名管道）。**
 >
 > **先读第 0 节，再看 0.11（最新，含一处重大更正）。第 1～9 节是"许可证故障"阶段的历史记录，其中第 6 节列的"尚未完成"已被第 0 节取代。**
 >
@@ -557,9 +557,18 @@ Steam 拉起的那份就弹这个框。证据链：
 4. 两次都失败就明确报错并给排查方向（别再谎报「已启动」—— 原来 4 秒存在性检查就会误报成功）。
 
 **实测**：`-SkipBundle -GameStartTimeoutSec 15` 跑通失败路径（报错清晰、退出码 1）。
-⚠ 截至 22:5x **Steam 客户端本身不再响应任何启动请求**（`steam://rungameid`、`steam.exe -applaunch`、
-直接 exe 三种方式都试过；`console_log.txt` 自 22:26:46 起没有任何新行；`applaunch` 退出码 0 但游戏没起），
-所以「游戏真的被拉起来」这一段**尚未在本机验证成功**，需要用户先让 Steam 恢复正常（看 Steam 窗口/重启 Steam）。
+**并加了一步「真的载入成功了吗」的确认**：进程起来后再等 `-ModLogWaitSec`（默认 60 秒）看 `ModLog.txt`
+是否被重写，刷新了才打印「mod 日志已刷新 ⇒ 游戏进了托管代码，mod 载入成功」。
+
+⚠ **更正本段曾经的结论**（22:39 复查）：我一度写「Steam 客户端不再响应任何启动请求」，**这是错的**。
+真实原因是**本会话的沙箱禁止命名管道**，而 Steam 的启动链路全都要走 Steam 的 **IPC（命名管道）**：
+`steam.exe -applaunch`、`steam://rungameid`、以及游戏侧 `SteamAPI_RestartAppIfNecessary` 都是
+「新进程 → 正在运行的 Steam 客户端」的管道通信。沙箱里这条通路被拦 ⇒ Steam 一行日志都不写、游戏也不出现
+（`console_log.txt` 至今停在 22:26:46；同期 cygwin `sh.exe` 报 `couldn't create signal pipe, Win32 error 5`，
+特征完全一致）。**机器上的 Steam 是好的** —— 用户自己那次运行（22:24:56）Steam 正常拉起了游戏（有日志为证）。
+⇒ 结论：**「游戏被成功拉起」这一段只能由用户在自己的终端 / 双击 `tools\打包测试.cmd` 里验证**，
+沙箱内的 agent 验证不了。（同理可以解释为什么「编辑器命令桥」全流程都成功：它走**文件**通信，不走管道；
+`Show-HkcsUnityWindow` 走窗口消息，也不走管道。）
 
 **(B) 用户要求：把 `hkmod-custom-scene` 提交并推送到 <https://github.com/yzdsgwxx/HKCustomScene>**
 

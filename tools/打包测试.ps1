@@ -40,6 +40,7 @@ param(
     [int]$UnityStartTimeoutSec = 420,
     [switch]$LaunchExe,
     [int]$GameStartTimeoutSec = 90,
+    [int]$ModLogWaitSec = 60,
     [string]$UnityExe,
     [string]$UnityProject,
     [string]$GameRoot,
@@ -173,7 +174,7 @@ try {
         if (@(Get-HkcsGameProcesses -Paths $paths).Count -gt 0) {
             Stop-HkcsGame -Paths $paths
         }
-        Start-HkcsGame -Paths $paths -LaunchExe:$LaunchExe -TimeoutSec $GameStartTimeoutSec
+        Start-HkcsGame -Paths $paths -LaunchExe:$LaunchExe -TimeoutSec $GameStartTimeoutSec -ModLogWaitSec $ModLogWaitSec
     }
 
     # ------------------------------------------------------------------
