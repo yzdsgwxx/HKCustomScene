@@ -750,6 +750,42 @@ Unity 已重启、`Editor.log` 无编译错误、命令桥恢复应答（pid 751
 **下一步可选**：想要"能在 Unity 里直接拼"的完整工程（prefab/场景/材质）就上 **AssetRipper**
 （下载通路已验证可行）——但 FSM/脚本仍不可用，适合拆美术和查结构。
 
+### 0.24 编辑器预览 = 游戏实测（2026-09-25 23:5x~00:0x）：弃用 Gizmo，改生成真实预览物体
+
+**用户要求**：「Gizmo 缩放视图时屏幕上大小永远不变，不应该用 Gizmo。换一种方式：图标要像真正的
+GameObject 那样，大小固定、缩放时跟着缩放，跟真物体的区别只是游戏里看不见 —— 用来预览游戏最终的样子。
+位置大小都要一样。」
+
+**为什么 Gizmo 不行**：`Gizmos` / `Handles`（含 `Handles.Label`）都是**屏幕空间**绘制，缩放 Scene 视图时
+大小不变，既看不出真实尺寸也没法跟地形对齐。用户的要求是对的。
+
+**做法（`Assets\Editor\HKCSPlacementPreview.cs`，新）**
+- 给每个 `PatchBench` / `PatchEnemy` 摆放点，在场景里生成一个**真正的 GameObject**：
+  `SpriteRenderer` + 原版美术（`Assets\Preview\bone_bench.png` / `fly0000.png`，从游戏 assets 解出来的）。
+- **`HideFlags.DontSave`** ⇒ 不写进 `.unity`、不进 AssetBundle、游戏里完全没有它；
+  实测 `activeScene.isDirty = False -> False`（**不会**弄脏场景/弹保存框）。
+- 每 0.3 秒自动同步（改摆放点/改字段/切场景都会重建），菜单 `工具 → HKCS 预览 → 开关预览物体` 可关。
+- 位置用**和 FinalMod 同一个公式**：轴心 = 摆放点 + (0, originLift + Bench.YOffset, 0.02)。
+- **自校准**：`PatchBench` 在游戏里把**实测**数据写到
+  `%USERPROFILE%\AppData\LocalLow\Team Cherry\Hollow Knight\HKCS_bench_metrics.txt`
+  （`width` / `height` / `originLift` = 精灵中心相对摆放点的高度），编辑器预览每 2 秒读一次；
+  读到就用实测值（位置大小和游戏**完全一致**），没读到就用常量近似（宽 2.86 / 轴心抬 0.59，来自
+  Benchwarp 的 styles.json 推断）。
+- 原 `HKCSPlacementGizmos.cs` 只保留 Hierarchy 里那个 16×16 小图标（不再画 Scene 视图的 Gizmo）。
+
+**踩到的坑（很重要，写下来）**
+- ⚠ **Unity 会「导入了新脚本但不编译」，而且日志里连报错都没有**（本轮遇到两次：`.meta` 已生成、
+  `Assembly-CSharp-Editor.dll` 时间戳不动、类型不在程序集里）。可靠修法：
+  **退出 Unity → 删掉 `Library\ScriptAssemblies\*` → 重启 Unity**（强制全量重编）✓ 本轮就是这么通的。
+- ⚠ Editor 脚本里也别裸用 `SceneManager`：`Assembly-CSharp` 里 HK 自己有个全局 `SceneManager`，
+  会和 `UnityEngine.SceneManagement.SceneManager` **二义（CS0104）** ⇒ 一律全限定。
+
+**验证（实测）**：清空程序集重启后，`Assembly-CSharp-Editor.dll` 里出现 `HKCSPlacementPreview` ✓；
+日志 `[HKCS][Preview] 已生成 1 个预览物体 … isDirty = False -> False` ✓；无 `error CS` ✓。
+
+**资产解包（本轮完成）**：UnityPy 全量导出 **8983 张 sprite / 128 MB / 355 个子目录** →
+`D:\HKModding\_hkassets\export\`（清单 `sprites_all.json`）；脚本 `tools\hkextract\*.py`。
+
 ### 0.8 给新 Agent 的继续提示词（本节优先）
 
 > 工作区 `D:\HKModding`，项目 `hkmod-custom-scene`。**先读本文件第 0 节**，再读 `README.md`、`教学-从零理解.md`。

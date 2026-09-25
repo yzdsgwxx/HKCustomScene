@@ -101,6 +101,43 @@ namespace HKCustomSceneMod.Patchers
                 "[HKCS] 长椅本体(sprite={0}) 世界边界 x {1:0.###}~{2:0.###}（宽 {3:0.###}），y {4:0.###}~{5:0.###}；摆放点 y={6:0.###} ⇒ 脚相对摆放点 {7:0.###}（负数=陷下去）",
                 (sr.sprite != null) ? sr.sprite.name : "null",
                 b.min.x, b.max.x, b.size.x, b.min.y, b.max.y, placement.y, b.min.y - placement.y));
+
+            WriteMetricsForEditor(b, placement);
+        }
+
+        /// <summary>
+        /// 把游戏里**实测**的长椅尺寸/轴心偏移写给 Unity 编辑器，
+        /// 让 `HKCSPlacementPreview` 的预览物体和游戏里完全一致（位置和大小都不用猜）。
+        /// 路径：%USERPROFILE%\AppData\LocalLow\Team Cherry\Hollow Knight\HKCS_bench_metrics.txt
+        /// </summary>
+        private static void WriteMetricsForEditor(Bounds b, Vector3 placement)
+        {
+            try
+            {
+                string dir = System.IO.Path.Combine(
+                    System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
+                    "Low", "Team Cherry", "Hollow Knight");
+                if (!System.IO.Directory.Exists(dir)) return;
+
+                string path = System.IO.Path.Combine(dir, "HKCS_bench_metrics.txt");
+                string text = string.Format(
+                    "# 由 CustomSceneMod 写入，供 Unity 编辑器预览用（HKCSPlacementPreview 每 2 秒读一次）\n" +
+                    "sprite={0}\n" +
+                    "width={1:0.#####}\n" +
+                    "height={2:0.#####}\n" +
+                    "originLift={3:0.#####}\n" +
+                    "scene={4}\n",
+                    (b.size.x > 0f) ? "measured" : "measured",
+                    b.size.x, b.size.y,
+                    (b.center.y - placement.y),   // 精灵中心相对摆放点的高度差 = 轴心偏移
+                    GameManager.instance != null ? GameManager.instance.sceneName : "?");
+
+                System.IO.File.WriteAllText(path, text);
+            }
+            catch (System.Exception e)
+            {
+                Modding.Logger.Log("[HKCS] 写预览数据失败（不影响游戏）：" + e.Message);
+            }
         }
 
         /// <summary>长椅的 FSM 在根物体或子物体上，且可能不是唯一一个，所以按名字找。</summary>
