@@ -105,14 +105,42 @@ function Write-HkcsWarn   { param([string]$Text) Write-Host ("  [注意] " + $Te
 function Write-HkcsErr    { param([string]$Text) Write-Host ("  [错误] " + $Text) -ForegroundColor Red }
 function Write-HkcsDryRun { param([string]$Text) Write-Host ("  [演练] " + $Text) -ForegroundColor Magenta }
 
-# 出错就停：打印一行红色错误并以退出码 1 结束脚本（双击 .cmd 时窗口会 pause 住，能看到）
+# 出错就停：打印一行红色错误并以退出码 1 结束脚本（双击 .cmd 时窗口跑完就自动关，失败才留 20 秒）
 function Stop-Hkcs {
     param([string]$Text)
     Write-Host ''
     Write-HkcsErr $Text
     Write-Host ''
     Write-Host '脚本已中止。' -ForegroundColor Red
+    Stop-HkcsTranscript
     exit 1
+}
+
+# ---------------------------------------------------------------------
+#  把整场输出同时写进 tools\_log\*.log
+#  为什么要它：双击 .cmd 跑完会自动关窗口（不再堆一堆窗口），日志留一份随时能回看。
+#  只保留最近 20 个 .log。
+# ---------------------------------------------------------------------
+function Start-HkcsTranscript {
+    param([string]$Name)
+    try {
+        $dir = Join-Path $PSScriptRoot '_log'
+        if (-not (Test-Path -LiteralPath $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+        Get-ChildItem -LiteralPath $dir -Filter '*.log' -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -Skip 20 |
+            ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+        $file = Join-Path $dir ($Name + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
+        Start-Transcript -Path $file -Force | Out-Null
+        Write-Host ('本次输出同时写入：' + $file) -ForegroundColor DarkGray
+    } catch {
+        # 转录失败不影响主流程
+    }
+}
+
+function Stop-HkcsTranscript {
+    try { Stop-Transcript | Out-Null } catch { }
 }
 
 # =====================================================================

@@ -46,6 +46,7 @@ $ErrorActionPreference = 'Stop'
 $scriptStart = Get-Date
 
 . (Join-Path $PSScriptRoot 'HKCS.Common.ps1')
+Start-HkcsTranscript -Name '更新壳工程'
 
 $paths = New-HkcsPaths -UnityExe $UnityExe -UnityProject $UnityProject
 
@@ -206,6 +207,7 @@ try {
         Write-HkcsInfo '下一步：在 Unity 里改/摆好场景，然后运行 打包测试.ps1（打包 → 编译 FinalMod → 装进游戏 → 重启游戏）。'
         Write-HkcsInfo ('备份目录：' + $paths.BackupDir)
     }
+    Stop-HkcsTranscript
     exit 0
 } catch {
     Stop-Hkcs $_.Exception.Message

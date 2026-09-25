@@ -10,6 +10,11 @@ namespace HKCustomSceneMod.Patchers
     public class PatchBench : MonoBehaviour
     {
         public string BenchName = "HKCS_Bench";
+
+        /// <summary>长椅深度 z。原版是 0.02；相机在 -z 看 ⇒ z 越小越靠前。
+        /// 地形若是 z=0 的实心 mesh，长椅放 +z 会被挡住 ⇒ 用负值（本工程默认 -0.5）。</summary>
+        public float Z = -0.5f;
+
         public Vector3 AdjustVector = Vector3.zero;
 
         public void Awake()

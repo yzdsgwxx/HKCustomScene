@@ -69,8 +69,17 @@ namespace HKCustomSceneMod
                 // 长椅必须整只克隆：坐下/存档逻辑在它自带的 "Bench Control" FSM 里。
                 new ValueTuple<string, string>("Crossroads_47", "RestBench"),
 
-                // ── 原版小怪（两只同场景，只多一次场景预载）──
+                // ── 原版小怪 ──
+                // ⚠ 实测：写 "Zombie Runner" / "Fly" **预载不到**（API 报
+                //    could not load 'Crossroads_01/Zombie Runner.prefab'）—— 原版怪不在场景根。
+                //    下面把所有候选一次都请求了，PrefabHolder 会挑第一个能用的并把命中的路径打进日志。
+                //    要确认真实路径：看 ModLog 里 [HKCS][Dump] 打出来的层级路径（ScenePathDump.cs）。
+                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Zombie Runner"),
+                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Zombie Runner 1"),
+                new ValueTuple<string, string>("Crossroads_01", "Enemies/Zombie Runner"),
                 new ValueTuple<string, string>("Crossroads_01", "Zombie Runner"),
+                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Fly"),
+                new ValueTuple<string, string>("Crossroads_01", "Enemies/Fly"),
                 new ValueTuple<string, string>("Crossroads_01", "Fly"),
                 // ⚠ 路径名写错不会拖垮别的预载：API 只会打一行
                 //    "could not load 'Crossroads_01/xxx.prefab'"，然后这一条就是 null，
@@ -123,6 +132,9 @@ namespace HKCustomSceneMod
 
             // B. 玩家在原版场景里 → 把该场景的入口门改指向我们的第一间房
             //    ⚠ 两个方向的落点**不一样**：Town 侧落 left1（西），Crossroads 侧落 right1（东）。
+            // （调试）把关键物体的层级路径打进日志，用来找 GetPreloadNames 要写的路径字符串
+            ScenePathDump.TryDump(to);
+
             if (scene == VanillaGates.TownScene)
             {
                 SceneChanger.RedirectVanillaGate(to, VanillaGates.TownGate,

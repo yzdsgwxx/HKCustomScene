@@ -670,6 +670,23 @@ Unity 已重启、`Editor.log` 无编译错误、命令桥恢复应答（pid 751
 **工具（在仓库外，不进 git）**：`D:\HKModding\_decomp` = 用 ILSpy 的反编译引擎写的命令行反编译器
 （`dotnet hkcs.decomp.dll <dll> <输出目录> <类型全名>...`）。本轮所有"源码级事实"都出自它。
 
+### 0.21 用户反馈三连修（2026-09-25 23:3x）：脚本窗口 / 长椅埋进地形 / 小怪预载路径
+
+**用户反馈 + 日志证据（不是猜的）**
+
+| 反馈 | 根因 | 修法 |
+|---|---|---|
+| "脚本执行完不关窗口，留了一堆窗口" | 我在 `.cmd` 里为了让人看报错加了**无条件 `pause`**，每次跑完都挂一个窗口等按键（用户那次是 Windows Terminal 里一个新标签页） | `.cmd` 改成**成功即关**，只有失败才停留 20 秒（`timeout /t 20`，按任意键立即关；stdin 被重定向时 `timeout` 立刻返回 ⇒ 自动化里不会挂住）。同时把完整输出转录到 `tools\_log\<脚本名>-<时间>.log`（只留最近 20 个，`Start-Transcript`/`Stop-Transcript`，`Stop-Hkcs` 里也会收尾）——窗口关了也能回看 |
+| "椅子怎么嵌进去地形里了" | 我**硬编码 `z = 0.02`**（照抄原版长椅）。原版房间的地形是精灵（透明队列，排序靠 sorting layer），而用户的房间地形是 **z=0 的实心 .obj mesh（Standard 不透明）**；相机在 -z 方向看 ⇒ z 越大越远 ⇒ 长椅在 +0.02 被地形挡在后面 | `PatchBench` 新增 `public float Z`（默认 **-0.5**，即在地形前面），不再硬编码；壳工程同步加字段并已装进 Unity（Cecil 校验字段 = `BenchName` / **`Z`** / `AdjustVector`）。**新增字段对已摆好的组件自动取初始值**（场景里没这个字段 ⇒ Unity 反序列化后保留 C# 初始值），所以用户不用手动改 |
+| "你这图标埋在地形里，我不好放置" | 我用的 `[DrawGizmo]` 会被场景实心几何体**遮挡**（Gizmos 有深度测试） | `HKCSPlacementGizmos.cs` 改成 **`SceneView.duringSceneGui` + `Handles.zTest = CompareFunction.Always`**：线框 + 带图标的文字标签（标签里直接显示 `BenchName z=…`），**永远画在最上层**；Hierarchy 小图标保留 |
+| 游戏日志：`could not load 'Crossroads_01/Zombie Runner.prefab'`（两条都失败） | 原版小怪**不在场景根**（多半在 `_Enemies` 之类的父物体下）；我按场景字符串搜出来的名字不是可用路径 | ① `GetPreloadNames()` 一次请求 7 条候选路径（`_Enemies/Zombie Runner`、`_Enemies/Zombie Runner 1`、`Enemies/...`、裸名字、Fly 三种），`PrefabHolder.GrabFirst` 挑第一个能用的并**把命中的路径打进日志**；② 新增 `FinalMod/ScenePathDump.cs`：进指定原版场景（默认 `Crossroads_01`/`Town`）时把命中关键字（Zombie/Fly/Bench/Enemies…）的物体**完整层级路径**打进 ModLog，用来确认真实路径；用完把 `Enabled=false` |
+
+**顺带**：`PatchBench`/`PatchEnemy` 现在成功时会各打一行日志（`[HKCS] 放了长椅 X @ (x,y,z)，FSM=OK` / `放了小怪 … @ (x,y)`），进游戏就能确认到底放上了没有。
+
+**已验证**：两工程 `dotnet build` 0 警告 0 错误；新壳 dll 已装进 Unity 且 Cecil 确认含 `Z`；Unity 重启后 `Assembly-CSharp-Editor` 编译通过（新 gizmo 生效）；`tools\_log\` 里两个脚本的日志都正常落盘。
+
+**用户下一步**：`tools\打包测试.cmd` → 进游戏看 ① 长椅有没有出现（被地形挡住就调 `Z`）② 小怪名单（ModLog 里 `[HKCS] Crossroads_01：命中预载路径 …`）③ `[HKCS][Dump]` 里的真实路径（用它把 `PrefabHolder` 候选数组换成确定的那条，然后把 `ScenePathDump.Enabled` 关掉）。
+
 ### 0.8 给新 Agent 的继续提示词（本节优先）
 
 > 工作区 `D:\HKModding`，项目 `hkmod-custom-scene`。**先读本文件第 0 节**，再读 `README.md`、`教学-从零理解.md`。

@@ -23,6 +23,16 @@ namespace HKCustomSceneMod.Patchers
         public string BenchName = "HKCS_Bench";
 
         /// <summary>
+        /// 长椅的深度（z）。
+        ///   · 原版长椅是 **0.02**（贴在地形精灵前面一点点）；
+        ///   · 相机在 -z 方向看 ⇒ **z 越小越靠前**；
+        ///   · ⚠ 如果房间地形是 z=0 的**实心 mesh**（比如 .obj 模型，Standard 材质不透明），
+        ///     长椅放在 +z 会被地形挡在后面看不见 —— 这时要放**负值**（本工程默认 -0.5）。
+        /// 想确认效果：进游戏看长椅有没有被地形吃掉，或看 Unity Scene 视图里图标和地形的前后关系。
+        /// </summary>
+        public float Z = -0.5f;
+
+        /// <summary>
         /// 坐下位置的微调（原版 FSM 里的 "Adjust Vector"）。留 (0,0,0) 表示不改动原值。
         /// 如果坐下后骑士位置明显偏了，就填一个小偏移量试。
         /// </summary>
@@ -43,7 +53,7 @@ namespace HKCustomSceneMod.Patchers
             bench.tag = "RespawnPoint";
 
             Vector3 p = transform.position;
-            bench.transform.position = new Vector3(p.x, p.y, 0.02f);   // z 和原版一致
+            bench.transform.position = new Vector3(p.x, p.y, Z);   // z 由 Z 字段控制（见字段注释）
 
             PlayMakerFSM fsm = FindBenchFsm(bench);
             if (fsm == null)
@@ -58,6 +68,11 @@ namespace HKCustomSceneMod.Patchers
             }
 
             bench.SetActive(true);   // 预载出来的 prefab 是 inactive 的，字段设完再开
+
+            Modding.Logger.Log(string.Format(
+                "[HKCS] 放了长椅 {0} @ ({1}, {2}, {3})，FSM={4}",
+                bench.name, bench.transform.position.x, bench.transform.position.y, bench.transform.position.z,
+                (fsm != null) ? "OK" : "缺失"));
 
             // 注意：这个"摆放点"空物体**不销毁** —— 留在场景里方便你进游戏时用 DebugMod/UnityExplorer 找到它
         }

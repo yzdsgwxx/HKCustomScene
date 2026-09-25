@@ -57,6 +57,9 @@ namespace HKCustomSceneMod.Patchers
 
             enemy.transform.position = transform.position;
             enemy.SetActive(true);   // 预载出来的 prefab 是 inactive 的，字段设完再开
+
+            Modding.Logger.Log(string.Format("[HKCS] 放了小怪 {0} @ ({1}, {2})",
+                enemy.name, enemy.transform.position.x, enemy.transform.position.y));
         }
     }
 }

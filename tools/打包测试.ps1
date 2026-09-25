@@ -51,6 +51,7 @@ $ErrorActionPreference = 'Stop'
 $scriptStart = Get-Date
 
 . (Join-Path $PSScriptRoot 'HKCS.Common.ps1')
+Start-HkcsTranscript -Name '打包测试'
 
 $paths = New-HkcsPaths -UnityExe $UnityExe `
                        -UnityProject $UnityProject `
@@ -185,6 +186,7 @@ try {
         Write-HkcsInfo '    [CustomSceneMod] - 场景包已加载，含 1 个场景：Assets/Scenes/HKCS_Room01.unity'
         Write-HkcsInfo ('日志文件：' + $paths.ModLog)
     }
+    Stop-HkcsTranscript
     exit 0
 } catch {
     Stop-Hkcs $_.Exception.Message
