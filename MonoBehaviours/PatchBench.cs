@@ -11,11 +11,8 @@ namespace HKCustomSceneMod.Patchers
     {
         public string BenchName = "HKCS_Bench";
 
-        /// <summary>高度补偿：把长椅从摆放点（=地面）往上抬这么多，脚才落在地面上。</summary>
-        public float YOffset = 0.5f;
-
-        /// <summary>深度 z：相机在 -z 看 ⇒ z 越小越靠前。</summary>
-        public float Z = -0.5f;
+        /// <summary>手动微调（正数=往上抬）。高度默认会自动对齐到长椅自带的 trigger，一般不用填。</summary>
+        public float YOffset = 0f;
 
         public Vector3 AdjustVector = Vector3.zero;
 

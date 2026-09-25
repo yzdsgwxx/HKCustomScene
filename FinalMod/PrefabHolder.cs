@@ -46,6 +46,9 @@ namespace HKCustomSceneMod
         private static readonly string[] FlyPaths =
         {
             "_Enemies/Fly",
+            "_Enemies/Fly Left",
+            "_Enemies/Fly Right",
+            "_Enemies/Fly 1",
             "Enemies/Fly",
             "Fly",
         };

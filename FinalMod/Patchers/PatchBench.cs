@@ -8,15 +8,14 @@ namespace HKCustomSceneMod.Patchers
     /// 在自定义房间里放一把**原版长椅（存档点）**。
     ///
     /// Unity 侧用法：房间里放一个空物体，挂上这个组件，把空物体摆在**长椅要站的那块地面**上。
+    /// 高度会**自动对齐**（见下），一般不用手调。
     ///
-    /// 三个字段别搞混：
-    ///   · BenchName —— 长椅物体名，同时是存档里的 respawnMarkerName；同房间多把椅子必须不同名。
-    ///   · YOffset   —— **高度补偿**。原版长椅 prefab 的轴心不在脚底（在座位附近，约高 0.6，
-    ///                  见 Benchwarp 的 triggerOffset.y ≈ -0.59），所以轴心放地面高度时**长椅会陷进地面**。
-    ///                  这个值把它整体上抬，让脚落在地面上。摆放点 y = 地面 ⇒ 一般填 0.5~0.7。
-    ///                  进游戏后日志会打长椅的实测上下边界，差多少照着微调即可。
-    ///   · Z         —— **深度（前后）**，和高度无关。相机在 -z 方向看 ⇒ z 越小越靠前；
-    ///                  房间地形若是 z=0 的实心 mesh（.obj），长椅要放负值才不会被地形挡住。
+    /// 为什么需要对齐：原版长椅 prefab 的**轴心不在脚底**，而是在座位附近
+    /// （实测 trigger 的 offset.y ≈ -0.59，也就是"骑士站的那块地"在轴心下方约 0.6）。
+    /// 直接把轴心放在地面高度，长椅就会陷进地面约 0.6。所以这里读长椅自带的 BoxCollider2D
+    /// （就是那个 trigger）的 offset.y，把**trigger 中心**对齐到摆放点 ⇒ 脚自然落在地面上。
+    ///
+    /// 深度 z **固定用原版长椅的 0.02**，不自己改显示层级。
     ///
     /// 原理（反编译游戏 dll + 参考 Benchwarp 的 BenchMaker）：长椅必须靠预载克隆，Unity 里造不出来；
     /// 坐下/存档逻辑在它自带的 "Bench Control" FSM 里，用「当前场景名 + 长椅物体名」写
@@ -27,17 +26,20 @@ namespace HKCustomSceneMod.Patchers
         /// <summary>长椅的物体名。同时是存档里的 respawnMarkerName，同一房间多把椅子要取不同名字。</summary>
         public string BenchName = "HKCS_Bench";
 
-        /// <summary>高度补偿：把长椅从摆放点（=地面）往上抬这么多，脚才落在地面上。见类注释。</summary>
-        public float YOffset = 0.5f;
-
-        /// <summary>深度 z：相机在 -z 看 ⇒ z 越小越靠前。地形是 z=0 的实心 mesh 时用负值。</summary>
-        public float Z = -0.5f;
+        /// <summary>
+        /// 手动微调（世界单位，正数=往上抬）。自动对齐之后如果还差一点点才用；
+        /// 进游戏看 ModLog 里"长椅本体…世界边界 y …；摆放点 y=…"那行来定。
+        /// </summary>
+        public float YOffset = 0f;
 
         /// <summary>
         /// 坐下位置的微调（原版 FSM 里的 "Adjust Vector"）。留 (0,0,0) 表示不改动原值。
         /// 如果坐下后骑士位置明显偏了，就填一个小偏移量试。
         /// </summary>
         public Vector3 AdjustVector = Vector3.zero;
+
+        /// <summary>原版长椅的深度（显示层级），照抄不动。</summary>
+        private const float BenchZ = 0.02f;
 
         public void Awake()
         {
@@ -53,9 +55,13 @@ namespace HKCustomSceneMod.Patchers
             // 原版长椅就是这个 tag（Benchwarp 的 MakeDeployedBench 也是这么设的）
             bench.tag = "RespawnPoint";
 
+            // ── 高度：把长椅自带的 trigger（骑士站的那块地）中心对齐到摆放点 ──
             Vector3 p = transform.position;
-            // y = 摆放点 + 高度补偿；z 由 Z 控制（深度，和高度无关）
-            bench.transform.position = new Vector3(p.x, p.y + YOffset, Z);
+            float triggerOffsetY = 0f;
+            BoxCollider2D trigger = bench.GetComponent<BoxCollider2D>();
+            if (trigger != null) triggerOffsetY = trigger.offset.y;
+
+            bench.transform.position = new Vector3(p.x, p.y - triggerOffsetY + YOffset, BenchZ);
 
             PlayMakerFSM fsm = FindBenchFsm(bench);
             if (fsm == null)
@@ -72,28 +78,29 @@ namespace HKCustomSceneMod.Patchers
             bench.SetActive(true);   // 预载出来的 prefab 是 inactive 的，字段设完再开
 
             Modding.Logger.Log(string.Format(
-                "[HKCS] 放了长椅 {0} @ ({1}, {2}, {3})，FSM={4}",
+                "[HKCS] 放了长椅 {0} @ ({1:0.###}, {2:0.###}, {3:0.###})，FSM={4}，triggerOffsetY={5:0.###}（已按它对齐到摆放点，YOffset={6:0.###}）",
                 bench.name, bench.transform.position.x, bench.transform.position.y, bench.transform.position.z,
-                (fsm != null) ? "OK" : "缺失"));
+                (fsm != null) ? "OK" : "缺失", triggerOffsetY, YOffset));
 
-            LogBounds(bench, p);
+            LogBodyBounds(bench, p);
         }
 
         /// <summary>
-        /// 把长椅的真实画面上下边界打进日志 —— 用来把 YOffset 一次调准：
-        /// 「脚比摆放点低 N」⇒ 把 YOffset 再加上 N 就贴地。
+        /// 只测**长椅本体**（根物体上的 SpriteRenderer）的世界边界 —— 不要用
+        /// GetComponentsInChildren 求并集：长椅的子物体里有光晕(Lit)之类的大 sprite，
+        /// 会把边界撑到十几单位宽（上一版就是这么打出假数据的）。这里顺便把宽度报出来，
+        /// 编辑器里 Gizmo 用的 BenchWidth 可以照着改成实测值。
         /// </summary>
-        private static void LogBounds(GameObject bench, Vector3 placement)
+        private static void LogBodyBounds(GameObject bench, Vector3 placement)
         {
-            Renderer[] rs = bench.GetComponentsInChildren<Renderer>(true);
-            if (rs == null || rs.Length == 0) return;
+            SpriteRenderer sr = bench.GetComponent<SpriteRenderer>();
+            if (sr == null) return;
 
-            Bounds b = rs[0].bounds;
-            for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
-
+            Bounds b = sr.bounds;
             Modding.Logger.Log(string.Format(
-                "[HKCS] 长椅实测边界 y {0:0.###} ~ {1:0.###}，宽 {2:0.###}；摆放点 y={3:0.###} ⇒ 脚比摆放点低 {4:0.###}（把 YOffset 加上这个数就贴地）",
-                b.min.y, b.max.y, b.size.x, placement.y, placement.y - b.min.y));
+                "[HKCS] 长椅本体(sprite={0}) 世界边界 x {1:0.###}~{2:0.###}（宽 {3:0.###}），y {4:0.###}~{5:0.###}；摆放点 y={6:0.###} ⇒ 脚相对摆放点 {7:0.###}（负数=陷下去）",
+                (sr.sprite != null) ? sr.sprite.name : "null",
+                b.min.x, b.max.x, b.size.x, b.min.y, b.max.y, placement.y, b.min.y - placement.y));
         }
 
         /// <summary>长椅的 FSM 在根物体或子物体上，且可能不是唯一一个，所以按名字找。</summary>

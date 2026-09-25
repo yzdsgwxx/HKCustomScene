@@ -79,6 +79,9 @@ namespace HKCustomSceneMod
                 new ValueTuple<string, string>("Crossroads_01", "Enemies/Zombie Runner"),
                 new ValueTuple<string, string>("Crossroads_01", "Zombie Runner"),
                 new ValueTuple<string, string>("Crossroads_01", "_Enemies/Fly"),
+                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Fly Left"),
+                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Fly Right"),
+                new ValueTuple<string, string>("Crossroads_01", "_Enemies/Fly 1"),
                 new ValueTuple<string, string>("Crossroads_01", "Enemies/Fly"),
                 new ValueTuple<string, string>("Crossroads_01", "Fly"),
                 // ⚠ 路径名写错不会拖垮别的预载：API 只会打一行
