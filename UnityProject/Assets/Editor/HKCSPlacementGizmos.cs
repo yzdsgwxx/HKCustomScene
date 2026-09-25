@@ -22,6 +22,12 @@ public static class HKCSPlacementGizmos
     private const string BenchIconPath = "Assets/Gizmos/HKCS_Bench.png";
     private const string EnemyIconPath = "Assets/Gizmos/HKCS_Enemy.png";
 
+    // 长椅在游戏里的身体尺寸（世界单位，宽 × 高）。Gizmo 就用这个尺寸画，所以
+    // 「编辑器里底边贴着地面」= 「游戏里脚落在地面上」。
+    // 想更精确：进游戏看 ModLog 的「长椅实测边界 y … ~ …，宽 X」那行，把数字填进来。
+    private const float BenchWidth = 1.9f;
+    private const float BenchHeight = 1.1f;
+
     private static Texture2D _benchIcon;
     private static Texture2D _enemyIcon;
     private static GUIStyle _labelStyle;
@@ -47,18 +53,33 @@ public static class HKCSPlacementGizmos
 
         foreach (PatchBench bench in Object.FindObjectsOfType<PatchBench>())
         {
+            Vector3 foot = bench.transform.position;   // 摆放点 = 长椅要站的那块地面
+
+            // 地面线：一眼看出你把它摆在哪条地面线上
+            Handles.color = new Color(0.35f, 1f, 0.9f, 1f);
+            Handles.DrawLine(foot + Vector3.left * (BenchWidth * 0.75f), foot + Vector3.right * (BenchWidth * 0.75f));
+
+            // 长椅身体：**底边贴在摆放点上** —— YOffset 调对以后，游戏里就是这个样子
             Handles.color = new Color(1f, 0.82f, 0.32f, 0.95f);
-            Handles.DrawWireCube(bench.transform.position + Vector3.up * 0.6f, new Vector3(1.2f, 1.2f, 0.1f));
-            Handles.Label(bench.transform.position + Vector3.up * 1.3f,
-                          new GUIContent(" " + bench.BenchName + "   z=" + bench.Z.ToString("0.##"), BenchIcon),
+            Handles.DrawWireCube(foot + Vector3.up * (BenchHeight * 0.5f), new Vector3(BenchWidth, BenchHeight, 0.1f));
+
+            Handles.Label(foot + Vector3.up * (BenchHeight + 0.3f),
+                          new GUIContent(" " + bench.BenchName
+                                         + "   y+=" + bench.YOffset.ToString("0.##")
+                                         + "   z=" + bench.Z.ToString("0.##"), BenchIcon),
                           LabelStyle);
         }
 
         foreach (PatchEnemy enemy in Object.FindObjectsOfType<PatchEnemy>())
         {
+            Vector3 foot = enemy.transform.position;
+
+            Handles.color = new Color(0.35f, 1f, 0.9f, 1f);
+            Handles.DrawLine(foot + Vector3.left * 0.5f, foot + Vector3.right * 0.5f);
+
             Handles.color = new Color(1f, 0.42f, 0.42f, 0.95f);
-            Handles.DrawWireCube(enemy.transform.position + Vector3.up * 0.6f, new Vector3(1.2f, 1.2f, 0.1f));
-            Handles.Label(enemy.transform.position + Vector3.up * 1.3f,
+            Handles.DrawWireCube(foot + Vector3.up * 0.5f, new Vector3(1f, 1f, 0.1f));
+            Handles.Label(foot + Vector3.up * 1.15f,
                           new GUIContent(" " + enemy.Kind + (string.IsNullOrEmpty(enemy.Id) ? "" : " #" + enemy.Id), EnemyIcon),
                           LabelStyle);
         }
