@@ -39,11 +39,27 @@ powershell -ExecutionPolicy Bypass -File .\更新壳工程.ps1
                -NoUnityLaunch     Unity 没开着就报错（默认会自动启动 Unity 并等它）
                -DryRun            只检查路径、只打印计划，不动任何文件
                -BuildTimeoutSec   等 Unity 打包的超时秒数（默认 900）
+               -GameStartTimeoutSec  等游戏进程出现的秒数（默认 90）
+               -LaunchExe         ⚠ 直接启动 hollow_knight.exe。默认不这么做，见下方「启动游戏」
 
 更新壳工程.ps1 -Force             不等你手动关，直接强杀 Unity（未保存的改动会丢）
                -NoUnityRestart    只编译 + 覆盖 dll，不自动关/开 Unity
                -DryRun            只检查路径、只打印计划
 ```
+
+## 启动游戏：必须走 Steam（重要）
+
+空洞骑士带 Steam DRM。**直接启动 `hollow_knight.exe` 会出问题**（2026-09-25 22:24 实测）：
+游戏起来后立刻通过 `SteamAPI_RestartAppIfNecessary` 让 Steam 又拉起一份，两份抢 Unity 的单实例锁，
+Steam 拉起的那份弹 `Fatal error: Another instance is already running`
+（Steam 自己的 `logs\console_log.txt` 里能看到 `Game process added : AppID 367520 ... ProcID 6864`）。
+
+所以「打包测试」第 5 步现在是：
+
+1. 已经有一个空洞骑士在跑 → **绝不启动第二份**，只把它切到前台并提示；
+2. 否则一律 `steam.exe -applaunch 367520` 请 Steam 启动，最多等 `-GameStartTimeoutSec` 秒；
+3. 起来后看窗口标题，是 `Fatal error` 就关掉那份、等 5 秒重试一次；
+4. 还是起不来就明确报错（mod 本身已经装好，只差启动），并提示去看 Steam 是不是卡着对话框。
 
 换机器/换安装位置时，改 `HKCS.Common.ps1` 里 `New-HkcsPaths` 的默认值，
 或每次用 `-UnityExe` / `-UnityProject` / `-GameRoot` / `-ModsFolder` 覆盖。
@@ -101,4 +117,7 @@ Unity 也没给外部程序留「点菜单」的接口。于是反过来做：�
 | 游戏里还是旧行为 | 看 `%USERPROFILE%\AppData\LocalLow\Team Cherry\Hollow Knight\ModLog.txt`；确认 `打包测试` 第 4 步打印的 SHA256 和 `FinalMod\bin\Release\HKCustomSceneMod.dll` 一致 |
 | `dll 比 Resources 里的文件还旧` | 场景包可能没被嵌进 dll。删掉 `FinalMod\obj\Release` 再跑一次 |
 | 打包成功但游戏里场景没变 | 检查场景最底部的 AssetBundle 名是不是 `hkcs_scenes`，以及 `FinalMod\Resources\hkcs_scenes` 的时间戳 |
+| 弹 `Fatal error: Another instance is already running` | 就是「直接启动 exe」踩了 Steam DRM（见上方「启动游戏」）。**别加 `-LaunchExe`**；脚本现在会请 Steam 启动，并在已有实例时拒绝重复启动 |
+| `等了 90 秒也没看到 hollow_knight 进程` | Steam 客户端没处理启动请求（可能弹着对话框、或卡住了）。看一眼 Steam 窗口，必要时重启 Steam 客户端再跑；mod 本身已经装好了 |
+| `git push` 报 `schannel: AcquireCredentialsHandle failed` | 本机 Windows 的 TLS(schannel) 坏了。本仓库已设 `http.sslBackend=openssl`（见 `handoff.md` 0.19）；别的仓库遇到同样报错就 `git config --local http.sslBackend openssl` |
 | 想回到某个旧 dll | `tools\_backup\` 里按时间戳找，复制回 `Mods\CustomScene\` 即可（游戏要先关掉） |
