@@ -74,6 +74,9 @@ function New-HkcsPaths {
     }
     $p.ModsFolder      = $ModsFolder.TrimEnd('\')
     $p.ModDll          = Join-Path $p.ModsFolder 'HKCustomSceneMod.dll'
+    # 对话文本配置：仓库根目录那份是"出厂模板"，mod 目录那份是游戏真正读的（玩家自己改文本就改它）
+    $p.RepoDialogueConfig = Join-Path $RepoRoot 'DialogueConfig.json'
+    $p.ModDialogueConfig  = Join-Path $p.ModsFolder 'DialogueConfig.json'
     $p.ModLog          = Join-Path $env:USERPROFILE 'AppData\LocalLow\Team Cherry\Hollow Knight\ModLog.txt'
 
     # Steam（空洞骑士必须由 Steam 启动，见 Start-HkcsGame 的注释）：

@@ -1,3 +1,4 @@
+using System;                      // ValueTuple
 using System.Collections.Generic;
 using Modding;
 using UnityEngine;
@@ -37,6 +38,13 @@ namespace HKCustomSceneMod
         public static GameObject ClimberPrefab { get; private set; }
 
         /// <summary>
+        /// 原版**灵魂怪**：德特茅斯（`Town`）里的 **`_NPCs/Gravedigger NPC`**（掘墓者），
+        /// 坐标实测 (211.64, 8.33, 0.00)、有子物体 `Dreamnail Hit`（层 19，梦钉命中盒）。
+        /// 用来克隆外观（`SpawnInVanillaScenes` 时"跟他长的一样"）。
+        /// </summary>
+        public static GameObject GravediggerPrefab { get; private set; }
+
+        /// <summary>
         /// 小怪的预载路径（**物体在场景里的完整层级路径**）。
         ///
         /// ⚠ 下面这些是 2026-09-26 用 UnityPy 直接读游戏自己的场景文件得到的，不是猜的：
@@ -54,6 +62,51 @@ namespace HKCustomSceneMod
 
         private static readonly string[] FlyPaths = { "Uninfected Parent/Fly" };
 
+        // ────────────────────────────────────────────────────────────────
+        //  原版"美术件"（光效/雕像/装饰）：给 PatchVanillaProp 用
+        //
+        //  ⚠ 预载清单是**启动时一次性**的，所以能克隆的物体必须在这里登记。
+        //    加新的：加一行 (场景名, 层级路径)，然后重新编译（不必动 CustomSceneMod，
+        //    它的 GetPreloadNames() 会自己来读这张表）。
+        //  已实测（用 UnityPy 读 level470 = Gods_Glory/GG_Workshop 和 level424 = GG_Atrium）：
+        //    · 众神殿堂（Hall of Gods）每座雕像都有一盏聚光灯：`GG_Statue_<名字>/Spotlight`
+        //      —— 辐光那座是 `GG_Statue_Radiance/Spotlight`（截图里那种光束+光晕+粒子）
+        //    · GG_Atrium：`light_beam`、`dream_beam_animation/dream_beam`、
+        //      `gg_atrium_hidden_path/gg_roof open_effect/sun`
+        // ────────────────────────────────────────────────────────────────
+
+        /// <summary>可以克隆的原版美术件清单。</summary>
+        internal static readonly ValueTuple<string, string>[] VanillaPropPaths =
+        {
+            new ValueTuple<string, string>("GG_Workshop", "GG_Statue_Radiance/Spotlight"),
+            new ValueTuple<string, string>("GG_Atrium", "light_beam"),
+            new ValueTuple<string, string>("GG_Atrium", "dream_beam_animation/dream_beam"),
+        };
+
+        private static readonly Dictionary<string, GameObject> VanillaProps =
+            new Dictionary<string, GameObject>();
+
+        /// <summary>按 (场景, 路径) 取预载好的原版美术件；没有就返回 null。</summary>
+        internal static GameObject GetVanillaProp(string scene, string path)
+        {
+            if (string.IsNullOrEmpty(scene) || string.IsNullOrEmpty(path)) return null;
+            GameObject go;
+            return VanillaProps.TryGetValue(scene + "|" + path, out go) ? go : null;
+        }
+
+        /// <summary>把"预载成功的美术件"列成一行（排查"光效没出来"时看日志）。</summary>
+        internal static string VanillaPropKeysText()
+        {
+            if (VanillaProps.Count == 0) return "（一个都没有 —— 检查启动日志里的 could not load）";
+            string s = "";
+            foreach (KeyValuePair<string, GameObject> kv in VanillaProps)
+            {
+                if (s.Length > 0) s += " | ";
+                s += kv.Key;
+            }
+            return s;
+        }
+
         public static void Preloaded(
             Dictionary<string, Dictionary<string, GameObject>> preloadedObjects,
             ILogger logger)
@@ -70,6 +123,22 @@ namespace HKCustomSceneMod
             CrawlerPrefab = GrabFirst(preloadedObjects, "Crossroads_01", CrawlerPaths, logger);
             ClimberPrefab = GrabFirst(preloadedObjects, "Crossroads_01", ClimberPaths, logger);
             FlyPrefab = GrabFirst(preloadedObjects, "Crossroads_07", FlyPaths, logger);
+
+            // 原版灵魂怪（德特茅斯的掘墓者）：用来克隆外观
+            GravediggerPrefab = Grab(preloadedObjects, "Town", "_NPCs/Gravedigger NPC", logger, quiet: true);
+
+            // 原版美术件（光效/雕像/装饰）：PatchVanillaProp 用
+            for (int i = 0; i < VanillaPropPaths.Length; i++)
+            {
+                string scene = VanillaPropPaths[i].Item1;
+                string path = VanillaPropPaths[i].Item2;
+                GameObject prop = Grab(preloadedObjects, scene, path, logger, quiet: true);
+                if (prop != null)
+                {
+                    VanillaProps[scene + "|" + path] = prop;
+                    logger.Log(string.Format("[HKCS] 美术件已备好：{0} / {1}", scene, path));
+                }
+            }
         }
 
         private static GameObject Grab(

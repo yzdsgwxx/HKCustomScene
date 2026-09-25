@@ -51,8 +51,12 @@ namespace HKCustomSceneMod.Consts
         // 进游戏后日志里有 "[HKCS] <房间> 地形网格实测：x[…] y[…]"，照它校准即可。
         public static readonly List<RoomDef> All = new List<RoomDef>
         {
+            // ⚠ 2026-09-26 02:3x 按日志实测更新：用户重做地图后，地形实测 x[-14.67 ~ 74.88]（宽 89.55）、
+            //    y[-0.06 ~ 30.00]（高 30.06）⇒ 这里改成 90x30（否则相机会看不到大半张地图）。
+            //    ⚠ 地形还**没从 (0,0) 开始铺**（左下角 -14.67, -0.06）：原版把相机左/下边界写死 14.6/8.3，
+            //      x<0 / y<0 的部分玩家永远看不到 ⇒ 请在 Unity 里把地形整体挪到 x ≥ 0、y ≥ 0。
             //                                 scene    w    h   fromPrev  toNext    title
-            new RoomDef(Room01, 60f, 17f, "left1",  "right1", true),
+            new RoomDef(Room01, 90f, 30f, "left1",  "right1", true),
             new RoomDef(Room02, 48f, 48f, "left1",  "right1", false),
             new RoomDef(Room03, 32f, 96f, "left1",  "right1", false),
         };

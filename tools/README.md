@@ -15,7 +15,7 @@
 
 | 脚本 | 干什么 | 什么时候跑 |
 |---|---|---|
-| **打包测试** | 打包 AssetBundle → 拷进 `FinalMod\Resources\` → 编译 FinalMod → 把 dll 装进空洞骑士 → 重启空洞骑士 | 每次改完 Unity 场景 |
+| **打包测试** | 打包 AssetBundle → 拷进 `FinalMod\Resources\` → 编译 FinalMod → 把 dll 装进空洞骑士（＋缺失时放一份 `DialogueConfig.json`，**不覆盖**玩家改过的文本）→ 重启空洞骑士 | 每次改完 Unity 场景 |
 | **更新壳工程** | 编译壳工程（`MonoBehaviours\`）→ 覆盖 Unity 工程的 `Assets\Assemblies\HKCustomSceneMod.dll` → 重启 Unity | 改了壳工程代码/结构之后（要在「打包测试」之前跑） |
 
 跑完「更新壳工程」不会自动接着跑「打包测试」—— 壳更新完你还得进 Unity 摆场景，

@@ -1079,7 +1079,756 @@ NullReferenceException at GameMap.GetTilemapDimensions() ← GameMap.Start()    
 - 一条 `GameManager.SetupHeroRefs` 的 NRE，上下文是 `Performing automatic level start.` + `Couldn't find a Hero`
   = 菜单场景的已知现象，与本房间无关。
 
+### 0.30 一轮"删Z/推送/预览图标/解包美术/Sorting"的经过 + 回滚 + 新增《教学-搭建地图.md》（2026-09-26 01:4x）
+
+> ⚠ 本节曾经拆成 0.30 / 0.31 / 0.32 三节，但用户在 01:2x 做了一次工作区回滚
+> （`git checkout .` + 清掉未跟踪文件），把当时**未提交**的内容全清了，所以那三节没了。
+> 这里把结论重新收成**一节**。当前代码状态 = 提交 `308fb53`。
+
+**(1) 已经进提交的东西（安全，不会因回滚丢）**
+
+- 提交 **`308fb53 椅子和四只十字路小怪`** 已推到 GitHub（`fcfa364..308fb53 master -> master`，32 文件 / +1508 / −230）。
+  含：0.27 相机修复（`TileMapFix` 补 `tk2dTileMap`）、0.28 四只小怪（实测预载路径）、0.29 自动落地、
+  房间表 `Room01` 由 64×32 改成实测 **60×17**、以及 **`PatchEnemy` 删掉 `Z` 字段**（位置按摆放点 transform）。
+
+**(2) 已被回滚清掉的东西（要恢复得重做）**
+
+| 东西 | 状态 | 重做方式 |
+|---|---|---|
+| `UnityProject\HKModCustomScene\Assets\Art\Crossroads\*`（4.7 MB 解包美术精选） | ❌ 不存在了 | `python _hkassets\export_area_art.py 37 Crossroads_01`，再按需拷进 `Assets\Art\...`（见新笔记 §3）|
+| `Assets\Preview\enemy_crawler/climber/zombie_runner.png`（3 个小怪预览图标） | ❌ 不存在了 | 从 `_hkassets\export\resources\bestiary_crawler_f.png` / `bestiary_infected_husk1_f.png` 拷成这三个名字 |
+| `HKCSPlacementPreview.cs` 的"按 Kind 查表出图标/宽度/对齐"（真工程 + 骨架） | ❌ 已回到只有 `EnemySpritePath = fly0000.png`（所有小怪都用苍蝇图） | 需要就重做：Kind → 图标名 + 实测宽度；落地怪底边贴摆放点、苍蝇居中 |
+
+**(3) 一次错误尝试：用 Sorting Layer 代替 z —— 已回滚，别再试**
+
+- 用户当时说「不应该改 Z 值，而是应该改图层」，我就把长椅/小怪换到 `Actors` 层。
+- 结果用户反馈「**完全看不见我的人了，感觉主角被盖住了**」。
+- **实测根因**：从 `resources.assets` 读出，**骑士自己的 MeshRenderer 是 `sortingLayerID = 0`（`Default`）、
+  order = 0、z = 0.000** —— `TagManager` 里那个 `Player` 层**骑士根本没用**。`Actors` 排在 `Default`
+  **之后** ⇒ 道具被画到骑士**前面**（骑士存档点就是那把长椅，一重生就被长椅 8 个渲染器糊住）。
+- 两条必须记住的结论（也写进新笔记 §4）：
+  1. **道具 z 不能小于 0**（骑士 z=0），否则盖住骑士；
+  2. **不透明物体会写深度**：本工程地形是 z=0 的不透明 Standard mesh ⇒ 道具放在它后面（z 更大）会被它挡。
+     想彻底解决只有把**地形材质换成透明**（ZWrite Off）+ 用 `Order in Layer` 分层（笔记 §4 方案 B）。
+- 回滚动作：`git checkout` 还原 `FinalMod/Patchers/PatchBench.cs`、`PatchEnemy.cs` 与壳工程同名文件，
+  删掉 `FinalMod/RenderSorting.cs`，两工程重新 `dotnet build` **0 警告 0 错误**。
+  ⚠ **`BenchZ = 0.02f` 是原版值、是对的**，别因为"看着像 z hack"就删。
+
+**(4) 新增教学文档 `教学-搭建地图.md`（用户要求：「教我如何搭建地图，输出到笔记」）**
+
+```
+§0 一分钟总览（流程 + 每阶段产物）
+§1 五条硬规矩 + 一条排序铁律
+§2 逐步操作 21 步（A 场景与地形 1-5 / B 让 mod 认识房间 6-10 / C 出入口 11-15 /
+   D 摆件 16-19 / E 打包与验证 20-21），每步：「点哪里 / 填什么 / 看哪条日志」
+§3 美术从哪来（_hkassets\map_art 全量、导出脚本、各 .assets 内容、tk2d 图集限制、版权提醒）
+§4 排序 z / Sorting Layer / Order 完整说明 + 两套自洽摆法（A 现状 / B 地形换透明 + order −1）
+§5 相机与房间尺寸公式（xLimit=W−14.6 / yLimit=H−8.3）
+§6 日志对照表（成功信号 7 条 / 错误信号 6 条）
+§7 排查总表（14 行：症状 → 原因 → 处理）
+§8 速查卡（新增一间房 14 条 checklist）
+§9 相关文件索引
+```
+
+写它时实测确认：菜单 `Tools/HKCS/生成 __Initializer`、
+`HKModCustomSceneTool/打包测试|Build AssetBundles Compressed|打开 tools 目录|打开日志目录`、
+`工具/HKCS 预览/开关预览物体`、`CONTEXT/MeshFilter/Create Collision`；
+`Assets/Prefabs/` 现有 `Bench.prefab` / `Enemy.prefab` / `Door_Left.prefab` / `Door_Right.prefab`。
+
+**(5) 当前工作区（未提交）**：`FinalMod/Resources/hkcs_scenes`、`Assets/AssetBundles/*`、
+`Assets/Prefabs/{Bench,Enemy}.prefab`、`Assets/Scenes/HKCS_Room01.unity` —— 都是用户自己在 Unity 里的改动。
+**用户明确要求不要自动 commit / push**（除非当次明确说了）。
+
+### 0.31 新功能：可梦钉抽的"灵魂怪"（迷宫入口）（2026-09-26 02:0x）
+
+**用户需求**：做一只像原版**灵魂怪**（灵魂沼泽里那些幽灵，被梦钉抽一下会给出对话然后消失）的怪，
+放在**原版地图**的某处当**迷宫入口**；要求
+① 交互文本**暴露成编辑器字段**；② 被抽后**不消失**；③ 表现类似死亡（动画 + 黑屏）后**在迷宫的椅子上醒来**；
+④ 进迷宫后左入口会删掉（所以只能靠这只怪进出）；⑤ 这只怪**一直保留**可复用。
+
+**(1) 反编译查到的硬事实（全部实测，不是猜）**
+
+| # | 事实 | 来源 |
+|---|---|---|
+| 1 | 梦钉命中谁由**英雄 FSM 的 `SendDreamImpact`** 决定：拿到命中物体后 `GetComponent<EnemyDreamnailReaction>()`，失败再 `GetComponentInParent<...>()`（要求父物体的 `allowUseChildColliders == true`），然后调 `RecieveDreamImpact()` | 反编译 `SendDreamImpact` |
+| 2 | `EnemyDreamnailReaction.RecieveDreamImpact()`：给灵魂（`noSoul` 可关，33/66 点）→ `ShowConvo()` → 找全局 FSM `Enemy Dream Msg → Display`，塞 `Convo Title`/`Convo Amount` 并 `SendEvent("DISPLAY ENEMY DREAM")`。**文本走语言表** ⇒ 可以用本 mod 的 `LanguageGetHook` 换成编辑器里填的字 | 反编译 `EnemyDreamnailReaction` |
+| 3 | `EnemyDreamnailReaction` 里 `convoAmount`/`convoTitle`/`noSoul`/`startSuppressed` 都是 `[SerializeField] private`，公开 API 只有 `SetConvoTitle(string)` ⇒ 其余字段**用反射设** | 同上 |
+| 4 | 原版灵魂怪的结构（`RestingGrounds_08` 的 `Ghost kcin` 等 19 只）：根物体（层 **13 Hero Detector** + 一个贴地的 trigger）+ 子物体 **`Dreamnail Hit`**（层 **19 Interactive Object**、`BoxCollider2D`、`isTrigger = true`、约 1.26×1.68）⇒ **梦钉的命中盒在第 19 层** | UnityPy 读 `level243` |
+| 5 | 本工程 `TagManager` 的物理层：`8 Terrain`、`9 Player`、`11 Enemies`、`13 Hero Detector`、**`19 Interactive Object`** | 读 `ProjectSettings/TagManager.asset` |
+| 6 | 重生/椅子 API（Cecil 实测签名）：`PlayerData.SetBenchRespawn(string spawnMarker, string sceneName, bool facingRight)`；`GameManager.ReadyForRespawn(bool isFirstLevelForPlayer)`（内部 = `BeginSceneTransition{SceneName=respawnScene, Visualization=ContinueFromSave, PreventCameraFadeOut=true}`）| Cecil + 反编译 `GameManager` |
+| 7 | MMHOOK 里有 `orig_RecieveDreamImpact` / `orig_Die` / `SetBenchRespawn` ⇒ 都能挂 `On.` 钩子 | findstr MMHOOK |
+| 8 | 灵魂怪在 `RestingGrounds_08`（= 灵魂沼泽）：`Ghost kcin`/`Ghost atra`/`Ghost wyatt`/`Ghost revek`/… 共 19 只（**场景根物体**）⇒ 想用原版美术，预载路径就是 `RestingGrounds_08/Ghost kcin` | UnityPy 读 `level243` |
+
+**(2) 代码（两工程 `dotnet build` 0 警告 0 错误；Cecil 比对两侧字段完全一致）**
+
+| 文件 | 内容 |
+|---|---|
+| `MonoBehaviours/PatchGhost.cs`（**新**，壳） | 字段：`GhostSprite`(Sprite)、`DialogueText`(TextArea)、`TargetScene`、`TargetBench`、`Delay`、`GiveSoul` |
+| `FinalMod/Patchers/PatchGhost.cs`（**新**） | `Awake()` 里**自己造一只灵魂怪**（纯运行时对象）：根物体（层 13）+ 子物体 `Dreamnail Hit`（层 19、trigger、尺寸取精灵）+ `SpriteRenderer` + **`EnemyDreamnailReaction`**（`allowUseChildColliders=true`、`SetConvoTitle(键)`、反射设 `convoAmount=1` / `noSoul=!GiveSoul`）+ 运行时组件 `GhostMarker`；文本键 = `HKCS_GHOST_<摆放点物体名>`，存进静态表供语言钩子查 |
+| 同上（`GhostMarker`，运行时组件） | `OnDreamNailed()` → 延迟 `Delay` 秒 → `PlayerData.SetBenchRespawn(TargetBench, TargetScene, true)` → `GameManager.ReadyForRespawn(false)` → **黑屏 + 在目标椅子上醒来**；`_busy` 用完复位（这只怪可以反复用、不会消失） |
+| `FinalMod/SceneChanger.cs` | `Init()` 挂 `On.EnemyDreamnailReaction.RecieveDreamImpact`（先放行原版 ⇒ 原版文本/特效照常），再看被抽的是不是我们的灵魂怪（身上有 `GhostMarker`）→ 触发传送 |
+| `FinalMod/CustomSceneMod.cs` | `OnLanguageGetHook` 加一条：键命中 `HKCS_GHOST_` 前缀就返回编辑器里填的 `DialogueText`（前缀匹配，兼容原版 UI 自己拼的 `_1`/`_2` 后缀） |
+
+**(3) 用户操作步骤**
+
+1. 双击 **`tools\更新壳工程.cmd`**（多了 `PatchGhost` 这个壳组件，Unity 必须重新导入壳 dll）；
+2. 在**原版地图**的某个场景里建一个空物体 → 挂 `PatchGhost` →
+   - `GhostSprite`：拖一张灵魂图（可以从解包素材里挑；不填 = 隐形，只有碰撞和梦钉反应）；
+   - `DialogueText`：随便填中文（这就是梦钉抽出来的字）；
+   - `TargetScene` = `HKCS_Room01`、`TargetBench` = 你迷宫里那把椅子的 `BenchName`（默认 `HKCS_Bench`）；
+3. 双击 **`tools\打包测试.cmd`**，进游戏用梦钉抽它。
+
+> ⚠ 这只怪**放在原版场景**：原版场景不在我们的 AssetBundle 里 ⇒ 必须在 Unity 里**打开那个原版场景**摆，
+> 但那会改动原版场景文件（工程里没有原版场景资源）…**当前工程的正确做法**是：这只灵魂怪也放在
+> **我们自己的场景**里（或另建一个"原版场景补丁"场景），路线由 `SceneChanger` 的
+> `ResolveRedirect`/`OnBeginSceneTransition` 管。**这一点需要在实操中确认**（见 §0.31(4) 第 1 条）。
+
+**(4) 还没验证 / 待确认（进游戏第一轮重点看这些）**
+
+1. **门口这只怪到底摆在哪**：用户说"放在原版地图上" ⇒ 目前工程只能改**我们自己**的场景；
+   要改原版场景得走"运行时往原版场景里注入对象"（`On.SceneManager` / `activeSceneChanged` 里
+   `Instantiate`）——**本轮的 `PatchGhost` 还是"场景里摆空物体"的用法**，放在原版场景这一步没做。
+2. **梦钉能不能打到它**：命中盒层号 19 是从原版灵魂怪身上量出来的，但英雄 FSM 的具体判定掩码没读；
+   若打不到，第一嫌疑就是层号（改成 13/11 试）或碰撞盒大小。
+3. **文本有没有显示**：看 `ModLog` 有没有 `放了灵魂怪 … 梦钉文本=「…」`；若弹的是空白/原版文字，
+   检查 `LanguageGetHook` 是否被调用（可以临时加日志）。
+4. **传送是否生效**：日志 `灵魂怪被梦钉抽到（…）→ … 秒后送往 …`；然后应在目标椅子上醒来。
+   注意这条路**不掉影子、不掉钱**（不是真死亡）；要"真死亡动画"就得用 `HeroController.Die()`
+   （会让影子留在原地，副作用大，需用户决定）。
+5. **v2 建议**：把 `GhostSprite` 换成**克隆原版灵魂怪**（预载 `RestingGrounds_08/Ghost kcin`，
+   自带精灵/光晕/粒子/飘动动画），视觉立刻和原版一致；代价是多预载一个场景。
+
+### 0.32 新功能：密码锁出口区域 `PatchComboLock`（2026-09-26 02:3x）
+
+**用户需求**：在迷宫出口做一个区域（他会自己摆"神居辐光雕像下那种光效"），玩家要在区域内按**密码**做动作 ——
+**向左攻击 n 下 → 向右攻击 m 下 → 面向左跳 x 下 → 面向右跳 y 下**（像密码锁，次数要在编辑器里配），
+完成就"出来迷宫"，表现和进来时一样（死亡式 → 在**德特茅斯的椅子**上复活）。
+
+**(1) 查到的硬事实**
+
+| # | 事实 | 来源 |
+|---|---|---|
+| 1 | 判定要用的状态位都在 `HeroControllerStates`（全 public bool）：`attacking` / `upAttacking` / `downAttacking` / `nailCharging` / `jumping` / `facingRight` / `onGround` / `dead` … | 反编译 `HeroControllerStates` |
+| 2 | **德特茅斯的长椅**：场景 `Town`（= level7）里根物体 **`RestBench`** ⇒ 椅子名就是 `RestBench`、场景名 `Town`（`PlayerData.SetBenchRespawn("RestBench", "Town", true)`）| UnityPy 读 `level7` |
+| 3 | 同一套传送流程（`SetBenchRespawn` + `GameManager.ReadyForRespawn(false)`）已经在上一条的 `PatchGhost` 里实测过路径（未进游戏验证）| 0.31 |
+
+**(2) 代码（两工程 `dotnet build` 0 警告 0 错误；Cecil 比对两侧 13 个字段完全一致）**
+
+| 文件 | 内容 |
+|---|---|
+| `MonoBehaviours/PatchComboLock.cs`（**新**，壳） | 字段：`ZoneSize`(Vector2 判定盒)、`AttackLeft`/`AttackRight`/`JumpLeft`/`JumpRight`、`RequireOrder`(默认 true)、`ResetOnWrong`、`ResetOnLeave`(默认 true)、`Delay`、`TargetScene`(默认 `Town`)、`TargetBench`(默认 `RestBench`)、`OneShot`、`Verbose`；另外实现 **`OnDrawGizmosSelected`**（Scene 视图里把判定盒画出来）|
+| `FinalMod/Patchers/PatchComboLock.cs`（**新**） | `Update()` 里：玩家在判定盒内才计数；攻击 = `cState.attacking` **上升沿**（且非上/下劈、非蓄力）；跳 = `cState.jumping` 上升沿；朝向取 `cState.facingRight`；有序模式按"左攻击→右攻击→左跳→右跳"逐段推进（次数 0 的段自动跳过），无序模式只累计次数；离开区域按 `ResetOnLeave` 清零。完成 → 日志 + 延迟 `Delay` → `SetBenchRespawn(TargetBench, TargetScene, true)` → `ReadyForRespawn(false)` |
+
+**(3) 用户操作**：`tools\更新壳工程.cmd`（新增壳组件）→ 出口摆空物体 + `PatchComboLock` → 填次数/范围
+（选中物体能看到判定盒）→ 光效/雕像美术自己摆 → `tools\打包测试.cmd`。
+
+**(4) 待验证 / 注意**
+1. **没进游戏验证过**：`attacking` / `jumping` 的上升沿会不会一次挥砍计成两次（HK 的 `attacking` 可能整段为 true，
+   但也可能中途闪烁）⇒ 第一轮请勾上 **`Verbose`** 看日志里记了几次；若多记，就把计数改成"必须返回 false 才能再计一次"
+   （现在是严格上升沿，理论上不会重复）。
+2. **跳跃计数**：`cState.jumping` 在 HK 里是"跳跃中"而不是"起跳瞬间"，上升沿=起跳 ✓；二段跳/蹬墙跳会不会也触发
+   上升沿需要实测（`doubleJumping`/`wallJumping` 也是独立位，必要时加过滤）。
+3. 判定"面向"用的是 `cState.facingRight`（不是 localScale）⇒ 站定不动挥砍时朝向就是最后一次移动方向，符合直觉。
+4. 和 `PatchGhost` 一样：这条传送**不掉影子、不掉钱**；要真死亡动画得改用 `HeroController.Die()`。
+
+### 0.33 灵魂怪**注入原版场景**（德特茅斯掘墓者旁边）（2026-09-26 02:5x）
+
+**用户要求**：「做啊。位置就放在德特茅斯那个灵魂怪旁边，跟他长的一样就行」。
+
+**(1) 先确认了那只怪真的存在（我上一轮判断错了）**
+
+用 `find_dreamtargets.py 7` 扫 `level7`（= `Town` = 德特茅斯）里"带梦钉相关子物体"的物体，结果：
+
+```
+_NPCs/Gravedigger NPC      参考坐标=(211.64, 8.33, 0.00)   子物体含: ['Dreamnail Hit']
+```
+
+⇒ **德特茅斯确实有一只灵魂怪：`_NPCs/Gravedigger NPC`（掘墓者），坐标 (211.64, 8.33)，带 `Dreamnail Hit` 子物体**
+（= 和灵魂沼泽那些幽灵同一套结构）。上一轮我用关键字扫 `level7` 时输出被截断，误判成"德特茅斯没有灵魂怪"。
+另外 Town 里其它 NPC（Elderbug/Tiso/Cloth/Zote/Nymm…）都只有 `Dream Dialogue` 子物体，**只有掘墓者是 `Dreamnail Hit`**。
+
+**(2) 代码改动（两工程 `dotnet build` 0 警告 0 错误；Cecil 比对两侧 10 个字段完全一致）**
+
+| 文件 | 改动 |
+|---|---|
+| `FinalMod/PrefabHolder.cs` | 新增 `GravediggerPrefab`（预载 `Town` / `_NPCs/Gravedigger NPC`，`quiet: true`）|
+| `FinalMod/CustomSceneMod.cs` | `GetPreloadNames()` 加 `("Town", "_NPCs/Gravedigger NPC")`；`OnSceneChanged` 开头加 `Patchers.PatchGhost.SpawnForScene(scene)` |
+| `FinalMod/Patchers/PatchGhost.cs` | 新增 4 个字段：`SpawnInVanillaScene` / `SpawnScene`(默认 `Town`) / `SpawnPosition`(默认 `(215.64, 8.33)`) / `UseVanillaLook`(默认 true)＋静态注入清单 `Requests`＋`SpawnForScene(string)`；`SpawnOne()` 统一处理两种外观：<br>· `UseVanillaLook && GravediggerPrefab != null` → `Instantiate` 原版掘墓者，**拆掉它自带的梦钉通路**（删子物体 `Dreamnail Hit`、删 `EnemyDreamnailReaction`，把原命中盒尺寸抄下来复用）⇒ 原版 FSM 不会被梦钉触发、不会消失，只留外观/粒子/待机动画；<br>· 否则用 `GhostSprite` 自建 sprite 幽灵。<br>然后加我们自己的命中盒子物体（层 19、trigger）+ `EnemyDreamnailReaction` + `GhostMarker`；最后 `MoveGameObjectToScene` 挪进**目标场景**（原版场景卸载就跟着销毁，下次进场景重新生成）|
+| `MonoBehaviours/PatchGhost.cs` | 同步这 4 个字段 |
+
+**(3) 用户操作**：`tools\更新壳工程.cmd` → 在**我们自己的场景**里放一个空物体 + `PatchGhost`，
+勾上「注入原版场景」即可（坐标由 `SpawnPosition` 决定，物体本身摆哪都行；`DialogueText` 就是梦钉文本、
+`TargetScene`/`TargetBench` 就是"进去以后在哪醒来"）→ `tools\打包测试.cmd` → 走到德特茅斯掘墓者旁边看它有没有出现。
+
+**(4) 待验证（第一轮重点）**
+1. **克隆出来的原版灵魂怪会不会显示**：灵魂沼泽那套幽灵是 `Appear Range`/`Unappear Range` 触发的
+   （英雄靠近才现形）——我们把它的 `Dreamnail Hit` 拆了、但**保留了其它 FSM**，所以待机/现形动画应该照常；
+   若它压根不出现，就说明它的 FSM 还依赖别的条件（届时可以只保留视觉子物体 `Character Sprite`/`Base Glow`/粒子）。
+2. **梦钉能不能打到**：命中盒层号 19 是从原版量出来的 ✓，盒子尺寸也是抄原版的 ✓；若打不到看一眼日志里
+   `放了灵魂怪 … 命中盒 WxH`。
+3. **注入坐标**：(215.64, 8.33) 是"原版掘墓者右边 4 格"；觉得远/近就改 `SpawnPosition`。
+4. 尚未进游戏验证（和 0.31/0.32 一起验最省事）。
+
+### 0.34 「挖光效」：众神殿堂辐射雕像的聚光灯 + 通用原版美术件克隆器（2026-09-26 03:1x）
+
+**用户要求**：「我怎么放置那个光效？挖出来」（截图 = 神居/众神殿堂里辐射雕像那种光束+光晕）。
+
+**(1) 挖到的路径（UnityPy 读场景数据，可复核）**
+
+| 场景 | level | 路径 | 是什么 |
+|---|---|---|---|
+| `Gods_Glory/GG_Workshop` | 470 | **`GG_Statue_Radiance/Spotlight`** | **辐射雕像的聚光灯**（光束 + 光晕 + 粒子）★ 就是截图那种 |
+| 同上 | 470 | `GG_Statue_<任意雕像名>/Spotlight` | 每座雕像同款（Hornet/MantisLords/Sly/… 扫描结果里全都有）|
+| `Gods_Glory/GG_Atrium` | 424 | `light_beam` | 一根独立光柱（含 `light_beam_particles 3`）|
+| 同上 | 424 | `dream_beam_animation/dream_beam` | 梦钉那种光束（旁边还有 `cd_room_beam_glow`）|
+| 同上 | 424 | `gg_atrium_hidden_path/gg_roof open_effect/sun` | 一个"太阳"效果 |
+
+**(2) 新增：通用的「原版美术件克隆器」**
+
+| 文件 | 内容 |
+|---|---|
+| `MonoBehaviours/PatchVanillaProp.cs`（**新**，壳） | 字段：`SourceScene`（默认 `GG_Workshop`）、`SourcePath`（默认 `GG_Statue_Radiance/Spotlight`）、`Offset`(Vector2)、`Scale`、`Z`(默认 0.02) |
+| `FinalMod/Patchers/PatchVanillaProp.cs`（**新**） | `Awake()`：从 `PrefabHolder` 取预载模板 → `Instantiate` → 摆到锚点+Offset、改 z/缩放 → **挪进当前场景**（场景卸载跟着销毁）→ 打日志 |
+| `FinalMod/PrefabHolder.cs` | 新增 **`VanillaPropPaths`**（可克隆清单，**单一来源**）+ `VanillaProps` 字典 + `GetVanillaProp(scene, path)`；`Preloaded()` 里逐条 `Grab` 并打日志 `美术件已备好：…` |
+| `FinalMod/CustomSceneMod.cs` | `GetPreloadNames()` 改成先建 List 再 `list.AddRange(PrefabHolder.VanillaPropPaths)` ⇒ **加新美术件只改 PrefabHolder 一处** |
+
+**(3) 用户怎么用（三步）**
+1. `tools\更新壳工程.cmd`（多了 `PatchVanillaProp` 这个壳组件）；
+2. 房间里放空物体 → 挂 `PatchVanillaProp` → `SourceScene` / `SourcePath` 用默认值就是辐射雕像那盏灯 →
+   把物体拖到出口位置 →（`Offset`/`Scale`/`Z` 微调）；
+3. `tools\打包测试.cmd` → 进游戏看灯。
+
+**想换别的光效**：把 `SourcePath` 换成上表其它路径，**但那一条必须先在 `PrefabHolder.VanillaPropPaths` 里登记**
+（预载是启动一次性的）——登记后重新编译即可；路径写错时启动日志会打 `could not load '<场景>/<路径>.prefab'`。
+
+**(4) 待验证 / 注意**
+1. 未进游戏验证（和 0.31/0.32/0.33 一起验最省事）。
+2. **多预载了两个场景**（`GG_Workshop` + `GG_Atrium`）⇒ 启动会多两次整场景加载；不想要就把
+   `VanillaPropPaths` 里用不到的条目删掉。
+3. 这类"美术件"往往是**好几个物体组合**（光束/光晕/粒子/底座符文），想要完整效果就在同一位置摆多个
+   `PatchVanillaProp`（各填一条路径）。
+4. 排序：`Z` 默认 0.02（在骑士后面 ✓）；若被不透明地形挡，就调小 `Z`（别小于 0，否则会盖住骑士）。
+5. 想自己拼而不是克隆：`python _hkassets\export_area_art.py 470 GG_Workshop` 可以把众神殿堂用到的
+   所有贴图整批导出（仓库外），再在 Unity 里手动拼。
+
+### 0.35 密码锁改成「攻击四方向 + 跳两方向」＋「后门」用法（2026-09-26 03:4x~04:0x）
+
+**用户要求（两次）**：① 给迷宫留个**后门**（防止卡住出不来），同样是"做一组神秘动作"，编辑器可配，
+做完直接传送到**德特茅斯的椅子**，表现和正常出迷宫一样；
+② 密码要改：**攻击改成上/下/左/右四个方向**，**跳保留左右两个方向**；
+③ **上、下攻击不分左右**，而且**下攻击只算"玩家在空中往下劈"那一下**（地面下劈不计入）。
+
+**(1) 后门 = 不需要新组件**
+
+`PatchComboLock` 本身就是"配一组动作 → 送到德特茅斯椅子"（默认 `TargetScene=Target`/`TargetBench=RestBench`）。
+**后门就是再摆一个实例、换一组密码**：勾 `AnywhereInScene`（不限区域，整场景任何地方做完都算）即可。
+
+**(2) 本轮代码改动（两工程 `dotnet build` 0 警告 0 错误；Cecil 比对两侧 **16** 个字段完全一致）**
+
+| 改动 | 说明 |
+|---|---|
+| 新增 `AttackUp` / `AttackDown` | 攻击四方向：`AttackUp`(上) / `AttackDown`(下) / `AttackLeft`(左) / `AttackRight`(右)；跳仍只有 `JumpLeft`/`JumpRight` |
+| 有序段顺序 | **上攻击 → 下攻击 → 左攻击 → 右攻击 → 左跳 → 右跳**（次数 0 的段自动跳过，顺序可关）|
+| 方向判定 | 上 = `cState.upAttacking`；下 = `cState.downAttacking` **且 `!cState.onGround`**（空中下劈/pogo 才算，地面下劈按 `Verbose` 打一句"不计入"）；左右 = 横挥按 `cState.facingRight`；跳 = `cState.jumping` 上升沿 + `facingRight` |
+| 新增 `AnywhereInScene` | true ⇒ 忽略 `ZoneSize`，**当前场景任何地方**做出这组动作都算（后门/保险）；Scene 视图画 40×20 绿色提示框 |
+| 空密码护栏（**真 bug 修复**） | ① 六个次数全 0 ⇒ 忽略这个锁并打红字（旧版会"随便动一下就触发传送"）；② 有序模式下"没有下一段"时不再误判成功（旧版那行 `Complete(); return;` 已改成 `return;`）|
+
+**(3) 编辑器里怎么配**
+
+| 用途 | 建议配置 |
+|---|---|
+| **正式出口** | `ZoneSize` 小一点摆在光效里；`AttackUp/Down/Left/Right`、`JumpLeft/Right` 填密码；`RequireOrder`=true；`ResetOnWrong`=false；`Verbose` 先勾上 |
+| **后门** | 另摆一个实例：`AnywhereInScene`=**true**，密码填一组**和出口不同**的组合，`OneShot`=false，目标仍是 `Town`/`RestBench` |
+
+日志示例：`[HKCS] 密码锁 第2段（下攻击）1/2`、`[HKCS] 密码锁 下一段：左攻击 ×3`、`[HKCS] 密码锁打开！1.5 秒后送往 Town:RestBench`。
+
+**(4) 待验证**：仍未进游戏（与 0.31~0.34 一批验）。重点看
+① 空中下劈能不能被记到（`onGround` 时机）、② 一次动作会不会记两次（上升沿理论不会）、③ 上劈/下劈是否确实不分左右。
+
+### 0.36 全局后门（不用摆任何东西）+ 新增《待办-入口与出口设置.md》（2026-09-26 04:2x）
+
+**用户要求**：① 「我不需要进行任何操作，我这个 Mod 的所有地图，这个后门都应该生效。我要摆的只是出口而已」
+② 「整理出我还要做的步骤：怎样设置好那个灵魂（抽他就进来这个椅子）、怎样让迷宫出口生效」。
+
+**(1) 新增 `FinalMod/GlobalBackdoor.cs`（**不需要任何场景物体**）**
+
+- 在**本 Mod 自己的任意房间**里（`Consts/RoomNames.cs` 登记过的场景）做出密码动作 ⇒ 直接送德特茅斯椅子。
+- 默认密码（常量，改文件顶部即可）：**上攻击 ×2 → 下攻击 ×2 → 左跳 ×2 → 右跳 ×2**，
+  顺序固定（`RequireOrder` 写死 true；顺序不对**只忽略不清零**，不惩罚玩家）；
+  目的地 `Town` / `RestBench`，`Delay = 1.5s`。
+- 判定口径与 `PatchComboLock` 一致：上劈 `upAttacking`、下劈 `downAttacking && !onGround`（**只算空中下劈**）、
+  横挥按 `facingRight`、跳 `jumping` 上升沿 + `facingRight`。
+- 挂载方式：`SceneChanger.Init()` 里加 `On.HeroController.Update`（每帧驱动 `GlobalBackdoor.Tick`），
+  `CustomSceneMod.OnSceneChanged` 里 `GlobalBackdoor.SetScene(scene)` 决定"当前房间算不算我们的"。
+- 日志前缀 `[HKCS][后门]`。两工程 `dotnet build` 0 警告 0 错误。
+
+**(2) 新增文档 `待办-入口与出口设置.md`（仓库根）** —— 用户要的是"**我还要做什么**"，所以这份文档是
+**纯操作待办**（勾选式）：
+- §0 前提（`更新壳工程` / 房间已登记 / 记住椅子 BenchName）
+- §A 让"梦钉抽灵魂怪 → 进迷宫椅子"生效（A1 摆长椅记 BenchName、A2 灵魂怪配置卡逐字段表、
+  A3 删左入口、A4 打包验收 + 三条日志对照 + 三种"没反应"的排查）
+- §B 让"迷宫出口"生效（B1 摆 `PatchComboLock`(+光效 `PatchVanillaProp`)、B2 六段密码逐字段表、
+  B3 打包验收 + 日志 + 排查）
+- §C 后门（不用摆，附默认密码与改法）
+- §D 一次跑通的 4 步顺序、§E 最容易踩的 5 个点
+- ⚠ 之前那版《进度总览.md》（讲"已完成什么"）已按用户要求**删除**。
+
+**(3) 待验证**：全局后门同样**没进游戏验证**；重点看空中下劈判定与"顺序不对只忽略"。
+
+### 0.37 入口灵魂怪写死 + 恢复井口↔井底 + 重排待办（2026-09-26 04:4x）
+
+**用户要求**：① 在德特茅斯那只灵魂怪**右边**摆我们的入口灵魂怪，交互文本改成
+**`不要打扰我，“否则我就送你去地狱。”`**，**不需要在编辑器里编辑**；
+② **恢复德特茅斯井口 ↔ 井底的联通关系**；③ 做完重新整理待办。
+
+**(1) `FinalMod/CustomSceneMod.cs`：入口灵魂怪**写死**（不需要任何场景物体）**
+
+`Initialize()` 里加：
+
+```csharp
+Patchers.PatchGhost.RegisterHardcoded(
+    key: "HKCS_GHOST_Entry", scene: "Town", pos: new Vector2(215.64f, 8.33f),
+    vanillaLook: true, text: "不要打扰我，“否则我就送你去地狱。”",
+    targetScene: Rooms.All[0].Scene, targetBench: "HKCS_Bench", delay: 1.5f);
+```
+
+- 位置 = 原版掘墓者 `(211.64, 8.33)` **右边 4 格**；外观 = **克隆原版掘墓者**（`UseVanillaLook`）；
+- 文本走 `PatchGhost` 的语言钩子（键 `HKCS_GHOST_Entry`，前缀匹配 ⇒ 原版 UI 自己拼的 `_1` 后缀也能命中）；
+- 抽了 **不消失**、延迟 1.5s → `SetBenchRespawn("HKCS_Bench", <房间0>)` + `ReadyForRespawn(false)`
+  ⇒ 在**迷宫那把 `HKCS_Bench` 椅子**上醒来；
+- ⚠ 因此**迷宫椅子的 `BenchName` 必须是 `HKCS_Bench`**（`PatchBench` 的默认值就是它）。
+- `PatchGhost.RegisterHardcoded(...)` 是新增的静态入口（写进 `Convos` + `Requests`）。
+
+**(2) 恢复原版井口↔井底联通**
+
+- `SceneChanger` 新增开关 **`internal static readonly bool EnableVanillaGateRedirect = false;`**
+  （用 `readonly` 而不是 `const`，否则后面那段旧代码会触发 CS0162"无法访问的代码"警告）；
+- `SceneChanger.ResolveRedirect()` 开头：`if (!EnableVanillaGateRedirect) return null;`
+  ⇒ **不再拦截** `Town → Crossroads_01` / `Crossroads_01 → Town` 的场景切换；
+- `CustomSceneMod.OnSceneChanged()`：同样在旧的两处 `RedirectVanillaGate` / `RedirectAllGatesTo`
+  之前 `if (!SceneChanger.EnableVanillaGateRedirect) return;` ⇒ **不再改写原版场景里的门**。
+- ⇒ 现在**跳井照原版下十字路、井底爬上来照原版回德特茅斯**；进迷宫的唯一入口 = 德特茅斯那只灵魂怪。
+  想恢复旧行为：把那行改成 `true`（一行）。
+- 两工程 `dotnet build` **0 警告 0 错误**；IL 校验：`RegisterHardcoded("HKCS_GHOST_Entry","Town", new Vector2(215.64f, 8.33f), true, "不要打扰我，“否则我就送你去地狱。”", Rooms.All[0].Scene, "HKCS_Bench", 1.5f)` ✓
+
+**(3) 重排待办 → `待办-入口与出口设置.md`（整份重写）**
+
+新的结构：§0 前提（`更新壳工程` + **椅子必须叫 `HKCS_Bench`**）→ **§A 入口灵魂怪什么都不用摆（附三条日志对照）**
+→ **§B 井口联通已恢复（附"跳井=原版"验证点）** → **§C 出口要你摆（`PatchComboLock` + 可选光效，逐字段表 + 验收日志）**
+→ **§D 后门不用摆** → §E 四点完整跑通流程 → §F 最容易踩的 5 个点。
+
+**(4) 仍未进游戏验证**：入口灵魂怪（含克隆外观、命中盒）、井口联通、出口锁、后门 —— 建议一次
+`更新壳工程` + `打包测试` 全验。
+
+### 0.38 修「那只怪的交互文本没被替换」（2026-09-26 05:0x）
+
+**用户反馈**：「那只怪的交互文本没有被正确替换」。
+
+**根因（推断 + 直接对症的修法）**：我们克隆了原版掘墓者，虽然删了它的 `Dreamnail Hit` 子物体和
+`EnemyDreamnailReaction`，但**它自己那套 PlayMaker FSM 还活着**，梦钉触发时原版 FSM 也会走一遍
+⇒ 弹出的是**原版台词**（我们的 `EnemyDreamnailReaction` 的标题被盖掉/抢先后）。
+
+**修法（`FinalMod/Patchers/PatchGhost.cs`）**
+1. `StripVanillaDreamnailPath()` 增加第 ③ 步：**把克隆体上所有 `PlayMakerFSM` 一律 `enabled = false`**
+   （不再有任何原版逻辑/原版台词），并打日志
+   `[HKCS] 已拆掉原版梦钉通路：删 Dreamnail Hit ×n、删 EnemyDreamnailReaction ×m、禁用 FSM ×k`；
+2. 原版待机动画（FSM 驱动）没了 ⇒ 新增运行时组件 **`GhostBob`**（`Amplitude=0.18`、`Period=2.4s`，
+   随机相位）让灵魂自己飘起来，`SpawnOne()` 里统一挂上；
+3. `CustomSceneMod.OnLanguageGetHook` 里，命中我们的梦钉文本时**打一行日志**
+   `[HKCS] 梦钉文本命中：key=… sheet=… → 「…」` —— 下次排查"文本没换"时，看这行在不在就知道
+   语言钩子有没有被问到；不在 ⇒ 说明弹的是**原版那只**的台词（我们的在右边 4 格）。
+
+⚠ 另一种可能：玩家梦钉抽到的是**原版那只掘墓者**（我们那只在右边 4 格）⇒ 当然显示原版台词。
+诊断办法就是上面那行日志：抽我们的会打 `梦钉文本命中`，抽原版的不会。
+
+两工程 `dotnet build` 0 警告 0 错误；IL 校验：`enabled = false`（FSM）、`AddComponent<GhostBob>()`、
+文本命中日志 都在 ✅
+
+### 0.39 更正理解：交互文本 ≠ 梦钉文本（2026-09-26 05:2x）
+
+**用户澄清**：「交互指的是我去到交互的区域，按上或者下就会进入的那个交互（**就像坐椅子一样**）」，
+并且「我不是叫你在抽他梦钉之后才弹出交互文本。**我抽他之后就直接死亡然后传送**」。
+
+⇒ 正确语义（0.38 那版理解反了，已改）：
+
+| 玩家动作 | 应该发生什么 |
+|---|---|
+| **走到跟前按上/下（交互，像坐椅子那样）** | 弹出**我们的文本**：`不要打扰我，“否则我就送你去地狱。”` |
+| **梦钉抽它** | **不弹任何文本**，直接死亡式过渡（黑屏）→ 在迷宫 `HKCS_Bench` 椅子上醒来 |
+
+**本轮改动（`dotnet build` 0 警告 0 错误，IL 已校验）**
+
+1. `PatchGhost.StripVanillaDreamnailPath()`：**不再禁用克隆体的 FSM**（禁了就既不能对话也不动），
+   只删它自带的 `Dreamnail Hit` 子物体 + `EnemyDreamnailReaction`；
+   同时**把克隆体 FSM 里所有字符串变量抄下来并打进日志**（`[HKCS] 原版灵魂怪 FSM 字符串：<FSM名>.<变量名> = 「值」`），
+   其中"像对话键"的（全大写/数字/下划线，如 `GRAVEDIGGER_1`）收进 `_convoKeys`；
+2. `PatchGhost.SwapConvo(convName)`：把原版对话键换成 `HKCS_GHOST_Entry`；
+3. `SceneChanger` 新增钩子 **`On.DialogueBox.SetConversation`**（`StartConversation` 内部也走它，
+   一处就够）：命中就换成我们的键，并打日志 `[HKCS] 交互文本替换：<原键> → HKCS_GHOST_Entry`
+   ⇒ 文本由 `CustomSceneMod.OnLanguageGetHook` 提供（前缀 `HKCS_GHOST_`）⇒ **交互时显示我们写的字**；
+4. 梦钉路径：我们的 `EnemyDreamnailReaction` 仍负责接收命中，但 **`convoAmount` 改成 0**
+   ⇒ `ShowConvo()` 没有页可显示（**不弹文本**），直接走 `GhostMarker` 的延迟 → `SetBenchRespawn` + `ReadyForRespawn`
+   ⇒ **抽了就死、就传送** ✓；
+5. `GhostBob` 只给"贴图自建"的幽灵加（克隆原版的待机动画是它 FSM 驱动的，不加避免打架）。
+
+**下一轮排查若交互文本还是原版**：看 `ModLog` 里
+`原版灵魂怪 FSM 字符串：… = 「…」`（把真对话键打出来了）+ `交互文本替换：…`（有没有命中）。
+两者都有但仍显示原版 ⇒ 那是**原版那只掘墓者**（我们的在右边 4 格）。
+
+### 0.40 密码锁改「方向数组」+ 改走真死亡流程 + 光效排查（2026-09-26 05:4x）
+
+**用户反馈四件事**：① 出口光效没出现、编辑器里也预览不到；② 死亡动画没播就传送了；
+③ 抽了之后出现的是（梦钉那串）文字，而不是交互的文字；④ 密码锁应该**按顺序**配、**用数组表示**（例如 上上下下左右左右）。
+
+**(1) ④ 密码锁改成有序数组（本轮主要改动）**
+
+- 新增枚举 **`PatchComboLock.ComboDir`**：`AttackUp=0 / AttackDown=1 / AttackLeft=2 / AttackRight=3 / JumpLeft=4 / JumpRight=5`
+  （⚠ 数值会进 `.unity`，只能往后追加）；
+- 新增字段 **`ComboDir[] Sequence`**（Inspector 里是列表，按顺序填），例如
+  `上 上 下 下 左 右 左 右`；**空的 = 忽略这个锁**；
+- **删掉**了原来的六个计数字段（`AttackUp/AttackDown/AttackLeft/AttackRight/JumpLeft/JumpRight`）和 `RequireOrder`
+  ⇒ 顺序由数组本身表达；`ResetOnWrong` 仍是"按错了是否清零"（默认只忽略）；
+- 逻辑：`_index` = 已匹配到第几个，输入等于 `Sequence[_index]` 就 +1，全串匹配完 → 完成；
+  每个动作仍是**上升沿**（一次挥砍/一次起跳记一次），下劈**只算空中那一下**；
+  日志：`密码锁 正确 3/8（下攻击）`、`下一个要做的动作：左攻击`、`密码锁 全串完成：…`；
+- 两工程 `dotnet build` **0 警告 0 错误**，`Sequence` 字段两侧一致 ✅
+
+**(2) ② 死亡动画：改走原版真死亡流程**
+
+- Cecil 实测：**`HeroController.Die()` 是 private（拿不到）**，而 **`GameManager.PlayerDead(float)` 是 public**；
+- 三处传送（`PatchComboLock` / `PatchGhost.GhostMarker` / `GlobalBackdoor`）统一改成：
+  `PlayerData.SetBenchRespawn(椅子, 场景, true)` → `GameManager.instance.StartCoroutine(GameManager.instance.PlayerDead(0.5f))`
+  ⇒ **播死亡动画 → 黑屏 → 在目标椅子上醒来** ✓
+- ⚠ 这是**真死亡**：会掉影子、掉钱（影子留在原地）——用户要的就是死亡动画，所以接受这个副作用。
+
+**(3) ③ 交互文本 vs 梦钉文本（上一轮已改，待重测）**
+
+0.39 已改成：**交互（走到跟前按上/下，像坐椅子那样）= 我们的文本**（`On.DialogueBox.SetConversation` 换键），
+**梦钉 = 不弹文本、直接死亡传送**（`convoAmount = 0`）。用户这条反馈是**旧构建**的现象，需要重新打包后再看。
+
+**(4) ① 出口光效没出现**
+
+- 本轮加了诊断：`PatchVanillaProp` 找不到预载模板时会打红字并**列出当前预载成功的美术件**
+  （`PrefabHolder.VanillaPropKeysText()`）：`没有预载 GG_Workshop / GG_Statue_Radiance/Spotlight …当前已预载：…`；
+  启动时也应有一行 `[HKCS] 美术件已备好：GG_Workshop / GG_Statue_Radiance/Spotlight`。
+  ⇒ **下一步请把这两行（或 `could not load 'GG_Workshop/…'`）发出来**，就能确定是"没预载到"还是"预载到了但不显示"。
+- **编辑器预览目前确实没有**：`PatchVanillaProp` 只在运行时实例化（原版美术没法进 Unity 工程），
+  编辑器里只有一个线框小球（`OnDrawGizmosSelected`）。**待办**：像长椅/小怪那样给它在编辑器里生成
+  "占位预览物体"（需要造一张占位光晕 PNG + 扩展 `HKCSPlacementPreview`）。
+
+### 0.41 出口灵魂怪"看不见"的真凶 = 原版 Appear/Unappear FSM（2026-09-26 03:0x）
+
+**用户反馈**：①「出口怪还是没出来！！！」（多轮）；②「其实我怀疑他掉下地图了」；③ 梦钉抽入口怪要弹梦语
+`既然你这么不知好歹，那就去地狱吧！`（上一轮要求，本轮落地）。
+
+**(1) 先证伪「掉下地图」—— 三条硬证据**
+
+- UnityPy 解包 `level7`（德特茅斯）读 `Gravedigger NPC` 整棵子树：**一个 `Rigidbody2D` 都没有**
+  ⇒ 它不可能自己掉下去。脚本：`D:\HKModding\_hkassets\probe_gravedigger.py`（顺带列出子物体/碰撞盒/sorting）。
+  子树实测：根 layer13 + `BoxCollider2D 3.10x0.56 trigger` + `Dreamnail Hit`(layer19, 1.26x1.68 trigger)
+  + `Prompt Marker` + `Burst` + `Away Pt`(粒子) + `Unappear Range`(17.90x7.69) + `Appear Range`(12.89x6.81)
+  + `Idle Pt`(粒子) + `Rush` + `Base Glow` + `Character Sprite`，根 `localPos=(211.64,8.33,0.00)`。
+- UnityPy 读原版相机（`_hkassets\probe_camera.py`）：主相机 `tk2dCamera` **z = -38.10**
+  ⇒ z=0 / z=0.02 的道具都在视锥里，**不存在"被近裁剪面裁掉"**（z=-13.56 也照样看得见，所以 z 不是原因）。
+- 游戏日志实证（`ModLog.txt`）本轮那行：
+  `放了灵魂怪 HKCS_Ghost_HKCS_GHOST_ExitGhost @ (54.69, 3.21, z=0)` +
+  `网格 Character Sprite=(1.34,3.45) enabled=True` + 子物体全"开"
+  ⇒ 怪**确实生成了、网格非空、位置正确**，问题只在"没现形"。
+
+**(2) 真凶**：克隆体自带一套 `Appear` FSM（FSM 字符串变量实测 `FSM.FSM Name = 「Appear」`、
+`FSM.Bool Name = 「Appear Range」/「Unappear Range」`）——原版灵魂怪是"**英雄靠近才现形、走远就消失**"
+（tk2d 的 sprite 靠**网格顶点色**画，藏起来就是 alpha 淡到 0）。在德特茅斯玩家总会走到它跟前所以看着正常；
+在我们自己的迷宫里它一直停在"没现形"状态。
+
+**(3) 本轮代码改动**
+
+- `FinalMod/Patchers/PatchGhost.cs`
+  - 新增 **`ForceAppear(ghost, killAppearFsm, dumpFsm)`**：① 打开 `Character Sprite/Base Glow/Rush/Idle Pt/Away Pt`；
+    ② 把 `tk2dBaseSprite.color` 与所有 `SpriteRenderer.color` 拉成纯白（alpha=1）；③ 把 FSM 名里带 `appear`
+    的 **`enabled = false`**（否则它随时再把怪藏起来），并把每个 FSM 的 `ActiveStateName` + 各状态的动作类型
+    dump 进日志（下次要精确定位有据可查）。**只对"出口（就地生成）"那只做**，入口那只（德特茅斯）保持原样。
+  - 新增 **`GhostGuard`** 看门狗（出口怪专属）：进房后 8 秒内每秒打一行
+    `pos/缩放/在场景里 | 渲染：名字/开关/相机看得见吗/sorting | 颜色：alpha | FSM：名字=当前状态`，
+    外加一次主相机位置；**位移超过 2 格就拉回摆放点并冻住刚体**（`bodyType=Kinematic, gravityScale=0`，
+    顺便关掉 `GhostBob` 免得打架）。稳定后删掉 `SpawnOne` 里加它的那一行即可。
+  - 出口怪 `z` **强制 0.02**（原来直接抄摆放点，用户那只抄来的是 -13.56），并打一行提示。
+  - 出口怪**补 `GhostBob`**（FSM 被关了，飘动自己补）。
+  - "目标场景"兜底：留空或**指回它自己所在的房间**（原地传送=配错）⇒ 自动改成 `Town:RestBench`。
+  - `convoAmount`：**入口 = 1**（梦钉要弹梦语，0 的话全局 FSM 没页可显示）、**出口 = 0**。
+- `FinalMod/SceneChanger.cs`
+  - `OnSetConversation`：**先按距离**（`FindMarkerNear(hero, 2.5)`）判定这次对话是谁的，再退回 `SwapConvo`
+    （旧顺序是反的 ⇒ 迷宫出口怪也会被换成入口的文本、而且不会触发传送）。
+  - `OnRecieveDreamImpact`：**出口**怪照旧跳过原版、直接传送；**入口**怪改成 `orig(self)` 放行原版梦语
+    （文本由语言钩子按 `Enemy Dreams` 表给 `EntryDreamText`）后再 `OnDreamNailed()`。
+- `FinalMod/CustomSceneMod.cs`：`OnLanguageGetHook` 里 `Enemy Dreams` 表改成走
+  `PatchGhost.GetDreamConvo(key)`（入口 → `既然你这么不知好歹，那就去地狱吧！`；其他我们的怪 → 空串）；
+  入口怪的 `delay` 1.5 → **2.5 秒**（留时间给梦语对话框）。
+- `FinalMod/Patchers/PatchGhost.cs` 里新常量 **`EntryDreamText`** = `既然你这么不知好歹，那就去地狱吧！`。
+
+**(4) 验收**：`dotnet build -c Release` → **0 警告 0 错误** ✅（无需重建壳工程，字段没变）。
+下次进迷宫请把 `ModLog.txt` 里 `[HKCS][看门狗]` 那几行发出来：
+如果 `渲染：Character Sprite/开/相机看得见` 却仍看不见 → 是排序/材质问题（下一步再动 sorting layer）；
+如果 `相机看不到` → 是位置/剔除问题。
+
+### 0.42 全局后门密码改成「上上 → 左右左右 → 左右跳」（2026-09-26 03:0x）
+
+**用户要求**：「将出来的后门修改为：向上攻击两次，向左攻击一次，向右攻击一次，向左攻击一次，向右攻击一次，
+向左跳，向右跳。然后将这个后门写到工程目录下」
+
+**(1) `FinalMod/GlobalBackdoor.cs`：密码从"按方向计次"改成"**有序动作表**"**
+
+- 旧写法（0.36）：`AttackUp/AttackDown/AttackLeft/AttackRight/JumpLeft/JumpRight` 六个计数常量 +
+  固定 `StageKinds/StageDirs`（同一方向只能占一段 ⇒ **表达不了"左、右、左、右"这种交错重复**）；
+- 新写法：`StepKinds[] / StepDirs[]` 两个并行数组，**数组里每一项就是一次动作**（同一个动作要做两次就写两项），
+  口径与 `PatchComboLock.Sequence` 完全一致；`RequiredFor` / `TryGetStage` / `RequireOrder` 整段删掉；
+- 当前密码（共 8 步）：`上攻击 → 上攻击 → 左攻击 → 右攻击 → 左攻击 → 右攻击 → 左跳 → 右跳`；
+- 判定口径不变（上劈 `upAttacking`、下劈**只算空中**那一下、横挥按 `facingRight`、跳 `jumping` 上升沿 + `facingRight`）；
+  顺序不对仍然**只忽略、不清零**（不惩罚玩家），完成后 1.5s → `Town:RestBench`；
+- 日志：`SetScene` 时把整串密码打出来
+  `[HKCS] 全局后门已就绪（…）：上攻击 → 上攻击 → 左攻击 → 右攻击 → 左攻击 → 右攻击 → 左跳 → 右跳`，
+  之后每步 `正确 3/8（左攻击）` / `下一个要做：右攻击` / 顺序错时 `顺序不对（这一步应该是 右攻击），已忽略`；
+- 对外接口 `SetScene` / `Reset` / `Tick` **没变** ⇒ `SceneChanger.cs`、`CustomSceneMod.cs` 一行都不用改。
+
+**(2) 验证（编译产物已核对）**
+
+- `dotnet build -c Release`（FinalMod）→ **0 警告 0 错误** ✅；
+- 反射读 `FinalMod\bin\Release\HKCustomSceneMod.dll` 的私有静态字段：
+  `StepKinds = 0,0,0,0,0,0,1,1`、`StepDirs = 0,0,2,3,2,3,2,3`（种类 0=攻击 1=跳；方向 0=上 2=左 3=右）
+  = **上攻击 ×2 → 左 → 右 → 左 → 右 → 左跳 → 右跳** ✅ 与用户要求逐项一致；
+  `TargetScene=Town` / `TargetBench=RestBench` 未变。
+- 已同步文档：`待办-入口与出口设置.md` §C 的密码那行 + 改密码说明。
+
+**(3) 仍未进游戏验证**：全局后门从 0.36 起就没进游戏实测过；本轮只换了密码表，判定分支没动。
+下次进迷宫请核对 `ModLog.txt` 里 `[HKCS][后门]` 那几行（就绪那行现在会带整串密码）。
+
+**(4) ⚠ 顺带记录（与本次改动无关）**：`MonoBehaviours` 工程 `dotnet build -c Release` 现在会在**最后的拷贝步**失败：
+`Assets\Assemblies\HKCustomSceneMod.dll` → `Access to the path … is denied`
+（该子树在本会话沙箱下不可写；NTFS ACL 其实给了 Modify，是沙箱层面的拒绝）。
+本次**没有**改任何 Placeable 字段 ⇒ **不需要**重建壳工程，不影响打包。
+
+### 0.43 出口怪"什么都没生成"的真凶 + 看门人自愈 + 文本全部可配置（2026-09-26 03:1x）
+
+**用户反馈（两条）**：① 「出口怪确实在这里，但是没有实例化任何东西。他应该实例化出来一只出口怪才是」
+② 「为什么我在引擎中放的图标去到游戏中会渲染错误」（附游戏截图：骑士旁边一块**洋红方块**；Unity 截图：
+ExitGhost 摆放点上挂着一张精灵当图标）。
+
+**(1) 证据链（都不是猜的）**
+
+- `ModLog.txt` 里**每次进房间都打了** `放了灵魂怪 HKCS_Ghost_HKCS_GHOST_ExitGhost @ (55.39, 2.69, z=0.02)`、
+  `强制现形：视觉件已打开；关掉的 FSM：Appear` —— 说明**怪确实生成过**；
+- 但整份日志里 **`[HKCS][看门狗]` 一行都没有**（0.41 那个看门狗是 8 秒内每秒打一行、无条件打）。
+  日志文件没被截断（同一份里"长椅本体""小怪落地"这些**晚一帧**的日志都在）⇒
+  **看门狗所在的物体在生成后立刻被关掉了**（物体不激活 ⇒ 挂在它身上的组件一个都不执行）。
+- 原版掘墓者自带的 FSM（日志里 dump 出来的状态/动作类型）里有一堆"藏自己"的东西：
+  `Appear` 的状态「Inert」= `FindChild + ActivateGameObject`、`fader` = 按距离把 alpha 淡到 0、
+  `ghost_npc_death` 的状态「Destroy」= `ActivateGameObject`、「Remove」= `ActivateAllChildren`。
+  0.41 只关掉了名字带 `appear` 的那套 ⇒ 其余几套照样能把怪/它的视觉件关掉。
+- 洋红方块：Unity 场景里 `ExitGhost` 这个**摆放点物体**上挂着一个 `SpriteRenderer`（图标），
+  它引用的精灵 GUID（`62ce01dd…`）在**整个工程里都不存在**（Assets/meta/git 全搜过），
+  而摆放点是**真实场景物体、游戏里照样存在** ⇒ 图标被真画出来，贴图/材质不在包里 ⇒ 洋红块，
+  正好盖在生成的灵魂怪身上 ⇒ 看起来"怪没生成、只有个坏图标"。
+
+**(2) 代码改动（`FinalMod/Patchers/PatchGhost.cs`）**
+
+- **拆摆放点上的美术件**：`Awake()` 里新增 `StripPlacementVisuals()` —— 删掉摆放点自己（含子物体）身上的
+  `SpriteRenderer` / `tk2dBaseSprite`（先 `enabled=false` 再 `Destroy`）并打日志。摆放点只需要"位置 + 配置"。
+- **只保留交互 FSM**：`ForceAppear(ghost, killNonInteractionFsm, dumpFsm)` 的判定从
+  "名字含 appear 的关掉"改成**白名单**：只留 `npc_control` / `Conversation Control`（说话必需），
+  其余（`Appear`/`fader`/`FSM`/`Bob`/`ghost_npc_death`/`ghost_npc_dreamnail`）**全部关掉**，日志里分别列出
+  "关掉的 / 保留的"。视觉恢复逻辑抽成 `RestoreVisibility(ghost)`（返回"都修了什么"的人话，供看门人复用）。
+- **看门人改成独立物体**：删掉 `GhostGuard`（挂在怪身上 ⇒ 怪被关掉它就哑了，正是这次踩的坑），
+  新增 **`GhostKeeper`**，由 `SpawnKeeper()` 建在**同一场景的另一个根物体** `HKCS_GhostKeeper_<key>` 上。
+  它每 0.25 秒扫一次：① 怪被 `SetActive(false)` ⇒ 自己打开（打红字）；② 怪被**销毁** ⇒ 照同一份配置
+  **重建**（最多 3 次，`RespawnForKeeper`，重建时 `withKeeper:false` 防止套娃）；③ 视觉件被关/颜色被淡
+  ⇒ `RestoreVisibility` 恢复；④ 位移 > 2 格 ⇒ 拉回摆放点 + 冻刚体。另外**头 8 秒每秒一行体检日志**：
+  激活/在层级里/每个渲染件的开关、**材质名、贴图名**、世界大小、排序、tk2d alpha、FSM 状态 ——
+  `贴图=null` ⇒ 就是洋红块的直接证据。之后安静地继续看着，只在动手修时打日志。
+- `SpawnOne(...)` 改成 `internal static GameObject SpawnOne(..., bool withKeeper = true)` 并返回怪；
+  `放了灵魂怪` 那行日志加了 `生成后 active=`；`Request` 从 private 改成 internal（看门人要用）。
+
+**(3) 文本全部可配置 → `DialogueConfig.json`（新功能，用户本轮要求）**
+
+- 三个文本：① 入口怪**交互**、② 入口怪**梦钉梦语**、③ 出口怪**交互**（就是原来写死在
+  `CustomSceneMod.cs` / `PatchGhost.EntryDreamText` / 场景里 `DialogueText` 的那三句）。
+- 新增三个**纯逻辑**文件（不碰 Unity/Modding，所以能单元测试）：
+  · `FinalMod/JsonMini.cs` —— 手写极小 JSON 读取器（**不引第三方库**；支持 `//`、`/* */` 注释、尾逗号、
+    BOM、不带引号的键；出错给「第 N 行第 M 列 + 原因」）；
+  · `FinalMod/DialogueDefaults.cs` —— 出厂三句 + **配置文件模板生成器** `FileText()` + 回退规则
+    `Resolve()`（缺失/留空 ⇒ 出厂默认；**只有 ③ 显式写 `""`** 才是"用场景里组件上的 DialogueText"）；
+  · `FinalMod/DialogueConfig.cs` —— 启动时读 `DLL 旁边的 DialogueConfig.json`；**没有就按模板写一份**出来；
+    解析失败/读失败 ⇒ 打红字说明原因并**退回出厂默认**（绝不因为配置写坏就崩）；日志前缀 `[HKCS][对话配置]`。
+- 接线：`CustomSceneMod.Initialize()` 第一句 `DialogueConfig.Load()`；入口怪的 `text:` 用
+  `DialogueConfig.EntryInteract`；`PatchGhost.EntryDreamText` 从 const 改成属性 → `DialogueConfig.EntryDream`；
+  出口怪 `Awake()` 里文本走 `ResolveDialogueText()`（json ③ 优先 → 组件上的 `DialogueText` → 占位「……」）。
+- **改文本不用重新打包**：直接编辑 mod 目录里那个 json → 重启游戏。
+- 仓库根目录新增 **`DialogueConfig.json`**（= `FileText()` 的输出，由测试生成/校验，逐字节一致）。
+- `tools/HKCS.Common.ps1` 加 `$p.RepoDialogueConfig` / `$p.ModDialogueConfig`；`tools\打包测试.ps1`
+  在装完 dll 后**只在缺失时**把仓库那份放进 mod 目录（**绝不覆盖玩家改过的文本**），DryRun 与脚本头部注释同步更新。
+
+**(4) 验证**
+
+- `dotnet build -c Release`（FinalMod）→ **0 警告 0 错误**；
+- 新增 `tests/DialogueConfigTests`（net9.0 控制台，**直接 Link 编译** `JsonMini.cs` / `DialogueDefaults.cs`，
+  测的就是发布的那份代码）：`dotnet run --project tests\DialogueConfigTests` → **通过 37 条，失败 0 条**
+  （解析/BOM/注释/裸键/转义/数字/null/7 种报错/回退规则/转义生成器/仓库 json 一致性）；
+  首次运行时它**生成了仓库根目录的 `DialogueConfig.json`**。
+- 反射/字节检查编译产物：`GhostKeeper`、`DialogueConfig`、`JsonMini` 都在 dll 里。
+
+**(5) ✅ 已部署（游戏退出后装的）**
+
+- `Managed\Mods\CustomScene\HKCustomSceneMod.dll` = 89,088 字节，SHA256 开头 `07C86B50D767416B`
+  （与 `FinalMod\bin\Release` 的编译产物逐字节一致；旧 dll 已备份到 `tools\_backup\`）。
+- 同时把仓库根目录的 `DialogueConfig.json` 放进 mod 目录（缺失时）——用户自己改过这份文件，
+  **已按他改的文本部署**：`entryInteract` = `不要打扰我，否则我就送你去地狱。`、
+  `entryDream` = `既然你这么想死，我就送你一程！`、`exitInteract` = 出厂那句。
+- 以后一切照旧：改文本只改 mod 目录那份 json（**不用重新打包**）；改代码/场景才走 `tools\打包测试.cmd`。
+
+**(6) 下次进游戏先看这几行（决定下一步）**
+
+1. `[HKCS][看门人]` 有没有出现？
+   · **没有** ⇒ 连独立看门人也没活下来，把整份 ModLog 发我；
+2. `激活=True 在层级里=True`？· `激活=False` ⇒ 看门人应该已经打了红字"已重新打开"，把红字发我；
+3. `渲染件：[Character Sprite … 贴图=…]` —— 贴图名是 `null` 还是名字？
+   · `null`/`材质=null` ⇒ 是"美术资产没进包"（下一条路：把原版那套 sprite collection 一起保住/换贴图）；
+4. `[HKCS] 强制现形：… **保留**的 FSM：npc_control、Conversation Control` 在不在（交互还能不能用）。
+
+### 0.44 ⚠ 我把 `tools\*.ps1` 的 BOM 弄丢了 → 双击脚本满屏乱码（2026-09-26 03:2x）
+
+**用户反馈**：双击 `tools\打包测试.cmd` 报一堆 `鐜版湁鍖咃細' + $b.Name + '`、`表达式或语句中包含意外的标记`、
+`语句块或类型定义中缺少右"}"`、`[FAILED exit code 1]`。
+
+**根因（不是脚本逻辑错，是编码）**：`.cmd` 里用的是 **Windows PowerShell 5.1**（`powershell.exe`）。
+PS 5.1 **只有在文件带 UTF-8 BOM 时才按 UTF-8 读**，否则按系统 ANSI 代码页（简中 = **GBK**）读 ——
+于是 UTF-8 的中文变成 `鐜版湁鍖咃細` 这种乱码，字符串引号被吃掉 ⇒ 语法直接崩。
+本次是我用编辑工具改 `tools\打包测试.ps1` / `tools\HKCS.Common.ps1` 时**把 BOM 吃掉了**
+（工作区里"没碰过"的 `tools\更新壳工程.ps1` 仍然**有 BOM**，对比即知）。
+
+**修法**：把这两个文件按 **UTF-8 带 BOM** 重写（`[System.IO.File]::WriteAllText($p, $text, (New-Object System.Text.UTF8Encoding($true)))`），
+随后用 PS 5.1 复核：
+
+- `[Parser]::ParseFile(...)` 三个 ps1 全部 `PARSE_OK`；
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\打包测试.ps1 -DryRun` → 中文输出正常、**退出码 0**
+  （演练模式不动文件、不起进程，可以随便跑）。
+
+**防复发（已加自动化守门）**：`tests\DialogueConfigTests` 新增 `TestScriptEncoding`：
+**逐个检查 `tools\*.ps1` 前 3 字节是不是 `EF BB BF`**，不是就直接 FAIL 并写明"PS 5.1 会按 ANSI 读 ⇒ 中文乱码+语法错"。
+现在跑测试 = **43 条全过**（原来 37 条 + 3 条 BOM 检查 + 3 条"仓库配置能解析"）。
+
+**⚠ 给以后所有 agent 的硬规则**：**重写 `tools\*.ps1` 必须保留 UTF-8 BOM**；
+`.md` / `.cs` / `.cmd` / `.json` 在仓库里本来就是**无 BOM**（别给它们加，尤其 `.cmd` 的头部注释就是专门说明
+"cmd.exe 按 ANSI 读，所以 .cmd 里不写中文路径"）。
+
+### 0.45 ★★ 出口怪"看不见"的**真正根因**：怪被塞进了正在卸载的上一个场景（2026-09-26 03:3x）
+
+**用户反馈**：「一切都正常，除了出口怪还是没有出现」（文本配置、看门人自愈、摆放点图标全都正常）。
+
+**(1) 决定性证据（就在用户刚跑出来的 `ModLog.txt` 里，行 253）**
+
+```
+[HKCS] ExitGhost 的「目标场景」被配成了它自己所在的房间（Town）⇒ 那是原地传送，已改成 Town:RestBench
+```
+
+这行的判断条件是 `r.TargetScene == SceneManager.GetActiveScene().name`，而场景里填的 `TargetScene` 是
+**`Town`**（正确值）—— 它被判成"自己所在的房间"，**只可能是因为 `GetActiveScene()` 当时返回的是 Town**。
+也就是说：**新场景（HKCS_Room01）里的物体先 Awake，而"当前激活场景"这时还是上一个场景（Town）**。
+
+而 `PatchGhost.Awake()` 里传的场景正是 `GetActiveScene()`：
+
+```csharp
+SpawnOne(..., r, UnityEngine.SceneManagement.SceneManager.GetActiveScene());   // ← 拿到的是 Town
+...
+SceneManager.MoveGameObjectToScene(ghost, scene);     // 怪被塞进 Town
+SceneManager.MoveGameObjectToScene(keeper, scene);    // 看门人也被塞进 Town
+```
+
+⇒ **Town 一卸载，克隆体和看门人跟着一起被销毁**。这完美解释了全部怪现象：
+
+- 日志说 `放了灵魂怪 … 生成后 active=True`，但一秒后场景里什么都没有（**被连场景一起销毁**）；
+- **看门人一行都没跑**（`Start` 都没执行）—— 0.41 那版挂在怪身上的看门狗同样是"一行都没有"，
+  0.43 我据此推断是"被某套原版 FSM 关掉了"，**那个推断是错的**（关 FSM 无害，但不是原因；
+  真凶是场景）。独立物体也救不了 —— 因为它同样被塞进了 Town。
+
+**(2) 修法（`FinalMod`）**
+
+| 文件 | 改动 |
+|---|---|
+| `Patchers/PatchGhost.cs` | `Awake()` 里取 `Scene here = gameObject.scene;`（无效才退回 `GetActiveScene()`），后面**全部用 `here`**：① `SpawnOne(..., here)`；② "目标场景=自己房间"的兜底改成和 `here.name` 比；③ "摆在我们房间里却勾了注入原版场景"的自动纠正也改成判 `here.name`（之前过渡期间也会失效） |
+| 同上 | `SpawnForScene(string sceneName)` → **`SpawnForScene(Scene scene)`**：场景由调用方传，不再自己 `GetActiveScene()`；`RespawnForKeeper(Request, Scene)` 用**看门人自己所在的场景** |
+| `CustomSceneMod.cs` | `OnSceneChanged(from, to)` 里改成 `PatchGhost.SpawnForScene(to)`（`to` 就是新激活的那个场景） |
+| `Patchers/PatchVanillaProp.cs` | 同一类写法（`MoveGameObjectToScene(prop, GetActiveScene())`）**一并改掉** —— 早先"出口光效没出现"很可能就是这个原因 |
+
+复核过剩下的 `GetActiveScene()`：`SceneChanger.OnBeginSceneTransition`（要的就是"离开的那个场景"）和
+`OnGetTilemapInfo`（相机初始化时，场景已激活）**语义正确，保持不动**。
+
+**(3) 验证**：`dotnet build -c Release` → **0 警告 0 错误**（89,088 字节那版之后的又一次编译）。
+
+**(4) 部署**：写这段时**游戏又开着**（进程检测到 hollow_knight）⇒ 没装。
+请**双击 `tools\打包测试.cmd`**（它会自己关游戏 → 重编 → 装 → 重启；BOM 问题已修，现在能正常跑），
+或关掉游戏后让我装。
+
+**(5) 下次进房间该看到什么（一眼验收）**
+
+- ✅ 应该**看到出口怪**站在 (55.34, 2.65) 附近（克隆的掘墓者，飘着）；
+- ✅ 应出现 `[HKCS][看门人] 已就位，看着 HKCS_GHOST_ExitGhost` + 头 8 秒每秒一行体检
+  （`激活=True 在层级里=True`、`Character Sprite … 可见=True 贴图=<名字>`）；
+- ✅ 0.45 之前那行 `ExitGhost 的「目标场景」被配成了它自己所在的房间（Town）` **应当消失**
+  （现在比的是 HKCS_Room01，不再是 Town）；
+- ❌ 如果怪出来了但**是洋红块** ⇒ 看体检行里的 `贴图=`（null = 美术资产没进包），把那行发我。
+
+### 0.46 出口怪行为定稿：能交互 / 不死亡传送 / 梦钉无反应（2026-09-26 03:5x）
+
+**用户反馈与要求**：「这只怪出现了，但是**不能交互**，抽了梦钉之后会把我**杀死**。要改行为：
+① 可以交互；② 交互文本 `你的勇敢征服了我，地狱不是你该来的地方，现在我送你回去。`；
+③ 交互完毕之后把小骑士**传送回来，不要用杀死的方式**；④ 用梦钉抽这只怪**不应该有任何反应**」。
+
+**(1) 为什么"不能交互" —— 我上一轮的 FSM 白名单砍过头了**
+
+0.43 那版为了"永远可见"，只留 `npc_control` + `Conversation Control`，把 `Appear`/`fader`/`FSM`/`Bob`/
+`ghost_npc_death` 全关了。但原版"英雄靠近 → 显示 ↑↓ 提示球 → 按上/下 → 弹对话"这条链是**多套 FSM 串起来的**：
+`FSM`（靠近检测，`Detect → Enter/Exit` 用 `SetFsmBool` 给别的 FSM 设 bool）一旦关掉，
+`npc_control` 就永远不知道英雄在跟前 ⇒ 按上/下毫无反应。
+**依据**：德特茅斯那只入口怪**所有 FSM 都是开的**，它交互得好好的（日志里 `交互文本替换：GRAVEDIGGER_TALK → …`
+就是跟它说话时打出来的）⇒ 出口怪照原样留全即可。
+
+⇒ 新规则（`PatchGhost.ForceAppear`）：**只关名字含 `dreamnail` 的那套 FSM**（梦钉通路，配合要求④），
+其余全部保留；`IsInteractionFsm()` 删除（改名成 `IsDreamnailFsm()`）。
+
+**(2) "不死亡传送"**（要求③）
+
+- 反编译 `GameManager.cs:714` 确认 `ReadyForRespawn(bool isFirstLevelForPlayer)` 的实现就是：
+  `RespawningHero = true; BeginSceneTransition(new SceneLoadInfo { SceneName = playerData["respawnScene"],
+  EntryGateName = "", Visualization = Default … })` —— **它就是"黑屏 → 在长椅重生点醒来"的流程，跟死亡无关**。
+- 所以新增 `GhostMarker.ExitWithoutDying()`：`PlayerData.SetBenchRespawn(椅子, 场景, true)` →
+  `GameManager.instance.ReadyForRespawn(false)`（**不再**调 `HeroController.Die()` / `PlayerDead`）。
+  万一抛异常，兜底用 `BeginSceneTransition(TargetScene, EntryGateName = 椅子)`。
+- 接线：`SceneChanger.OnHideText`（对话框收起 = 交互结束）里 `_pendingExit` 那支从 `OnDreamNailed()`
+  改成 **`ExitWithoutDying()`**。
+- ⚠ **入口怪不改**：仍是"梦钉 → 梦语 → 真死亡 → 在迷宫椅子上醒来"（用户没要求改它，
+  0.40 起它就是按"真死亡"做的）。
+
+**(3) "梦钉抽出口怪毫无反应"**（要求④）——三重保险
+
+1. `SceneChanger.OnRecieveDreamImpact`：命中出口怪时**直接 return，连 `orig()` 都不调**
+   （不弹梦语、不播梦钉特效、不给灵魂、不传送），日志 `梦钉命中**出口**灵魂怪 → 按用户要求：**毫无反应**`；
+2. 出口怪身上**唯一被关掉的 FSM** 就是 `ghost_npc_dreamnail`；
+3. 它的 `EnemyDreamnailReaction.convoAmount` 早就是 0（无文本可弹）。
+
+**(4) 文本**（要求②）：`DialogueConfig.json` 的 ③`exitInteract` 改成
+`你的勇敢征服了我，地狱不是你该来的地方，现在我送你回去。`
+（仓库根目录那份 + 游戏 mod 目录那份**都已更新**，哈希一致；①② 保留用户自己改的两句。）
+
+**(5) 顺带**：出口怪**不再加 `GhostBob`** —— 原版 `Bob` FSM 现在是开着的（它自己会飘），
+两个上下浮动会打架；`GhostKeeper` 也**不再每 0.25 秒把颜色掰回纯白**（那会跟 `fader` 打架、一明一暗地闪），
+只剩"根物体被关掉就打开 / 被销毁就重建 / 跑掉就拉回" + 头 8 秒体检日志。
+
+**(6) 验证**：`dotnet build -c Release` → **0 警告 0 错误**（`ReadyForRespawn` / `SceneLoadInfo` /
+`GameManager.SceneLoadVisualizations` 都是**编译期**确认过的，不是我猜的 API）；测试 `43 条全过`。
+
+**⚠ 部署状态**：改完时**游戏又开着**（PID 7544）⇒ **dll 没装**。关掉游戏后跑 `tools\打包测试.cmd`
+（或告诉我来装）。`DialogueConfig.json` 已经先更新好了（它不是 dll，随时可改）。
+
 ### 0.8 给新 Agent 的继续提示词（本节优先）
+
 
 > 工作区 `D:\HKModding`，项目 `hkmod-custom-scene`。**先读本文件第 0 节**，再读 `README.md`、`教学-从零理解.md`。
 >

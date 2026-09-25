@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    DialogueConfigTests —— 只测**纯逻辑**部分（不碰 Unity/Modding）：
+      · JsonMini.cs         ：那个手写的极小 JSON 读取器
+      · DialogueDefaults.cs ：出厂文本 + 配置模板 + "缺失/留空该怎么回退"的规则
+    这两个文件是从 FinalMod **直接链进来编译**的（Link），不是拷贝 —— 测的就是真正发布的那份代码。
+    另外它负责**生成/校验仓库根目录的 DialogueConfig.json**（内容必须和 DialogueDefaults.FileText() 逐字节一致）。
+
+    跑法：dotnet run (project) tests\DialogueConfigTests
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>DialogueConfigTests</AssemblyName>
+    <RootNamespace>HKCustomSceneMod.Tests</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="..\..\FinalMod\JsonMini.cs" Link="JsonMini.cs" />
+    <Compile Include="..\..\FinalMod\DialogueDefaults.cs" Link="DialogueDefaults.cs" />
+  </ItemGroup>
+
+</Project>

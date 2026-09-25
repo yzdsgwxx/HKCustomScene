@@ -54,7 +54,7 @@ namespace HKCustomSceneMod
         /// </summary>
         public override List<ValueTuple<string, string>> GetPreloadNames()
         {
-            return new List<ValueTuple<string, string>>
+            List<ValueTuple<string, string>> list = new List<ValueTuple<string, string>>
             {
                 // ── 原版组件（都来自同一个场景，预载是加载耗时大头，尽量少换场景）──
                 // 区域名 / 子区域名显示
@@ -85,11 +85,24 @@ namespace HKCustomSceneMod
                 new ValueTuple<string, string>("Crossroads_07", "Uninfected Parent/Fly"),
                 // ⚠ 加新怪种要改三处：这里、PrefabHolder 的路径数组、PatchEnemy 的枚举（末尾追加）。
                 //    枚举改了还要跑一次 `tools\更新壳工程.cmd`，否则 Unity 里选不到新怪种。
+
+                // ── 原版灵魂怪（德特茅斯的"掘墓者"）──
+                // 用 UnityPy 读 `level7`(= Town) 得到的路径；坐标实测 (211.64, 8.33, 0.00)。
+                // 用途：PatchGhost 在**原版场景**里注入一只"长得跟他一样"的灵魂怪（迷宫入口）。
+                new ValueTuple<string, string>("Town", "_NPCs/Gravedigger NPC"),
             };
+
+            // ── 可克隆的原版美术件（光效/雕像/装饰）──
+            // 清单在 PrefabHolder.VanillaPropPaths 里（单一来源），加新物体只改那一处
+            list.AddRange(PrefabHolder.VanillaPropPaths);
+            return list;
         }
 
         public override void Initialize(Dictionary<string, Dictionary<string, GameObject>> preloadedObjects)
         {
+            // 对话文本：先读 mod 目录下的 DialogueConfig.json（缺文件就照出厂模板建一份出来）
+            DialogueConfig.Load();
+
             SceneChanger = new SceneChanger(preloadedObjects, this);
             SceneChanger.Init();
 
@@ -97,6 +110,21 @@ namespace HKCustomSceneMod
             {
                 Modding.Logger.Log(string.Format("[HKCS] 登记房间 {0} ({1}x{2})", r.Scene, r.Width, r.Height));
             }
+
+            // ── 写死的"入口灵魂怪"（2026-09-26 按用户要求：不需要在编辑器里配）──
+            // 德特茅斯掘墓者（_NPCs/Gravedigger NPC，实测 (211.64, 8.33)）**右边 4 格**；
+            // 克隆原版外观；梦钉抽它 → 在迷宫（Rooms.All[0]）的那把椅子上醒来。
+            // ⚠ 文本全部来自 `DialogueConfig.json`（见文件顶部 DialogueConfig.Load()）：
+            //    这里的 text = ① 交互文本；梦语 = ② entryDream（PatchGhost.EntryDreamText）。
+            Patchers.PatchGhost.RegisterHardcoded(
+                key: "HKCS_GHOST_Entry",
+                scene: "Town",
+                pos: new Vector2(215.64f, 8.33f),
+                vanillaLook: true,
+                text: DialogueConfig.EntryInteract,
+                targetScene: Rooms.All[0].Scene,
+                targetBench: "HKCS_Bench",
+                delay: 2.5f);   // 梦钉会先弹梦语（entryDream）⇒ 留 2.5 秒再死
         }
 
         private void InitCallbacks()
@@ -114,6 +142,15 @@ namespace HKCustomSceneMod
         private void OnSceneChanged(Scene from, Scene to)
         {
             string scene = to.name;
+
+            // 0. 往**原版场景**里注入灵魂怪（PatchGhost 里勾了"注入原版场景"的那些配置卡）
+            //    原版场景每次加载都重造一次：场景卸载它就跟着销毁，不会跑到别的场景去
+            //    ⚠ 把 `to`（新场景）传给 SpawnForScene：它自己 GetActiveScene() 会拿到**上一个**场景，
+            //      导致怪被塞进正在卸载的场景里、跟着一起销毁（2026-09-26 出口怪"看不见"的真凶）。
+            Patchers.PatchGhost.SpawnForScene(to);
+
+            // 0.5 全局后门：只在我们自己的房间里启用（防卡死，不用在场景里摆东西）
+            GlobalBackdoor.SetScene(scene);
 
             // A. 玩家进了我们自己的一间房 → 让 HK 重新读这个房间的尺寸
             RoomDef room = Rooms.Get(scene);
@@ -148,6 +185,12 @@ namespace HKCustomSceneMod
             // （调试）把关键物体的层级路径打进日志，用来找 GetPreloadNames 要写的路径字符串
             ScenePathDump.TryDump(to);
 
+            // ⚠ 2026-09-26 按用户要求**恢复原版联通**：不再改原版场景里的门，
+            //    德特茅斯井口 ↔ 井底（Crossroads_01）照原版走；
+            //    进迷宫改由"德特茅斯的灵魂怪"负责（见 Initialize 里写死的入口灵魂怪）。
+            //    想恢复旧的"跳井直接进房间"，把 SceneChanger.EnableVanillaGateRedirect 改成 true。
+            if (!SceneChanger.EnableVanillaGateRedirect) return;
+
             if (scene == VanillaGates.TownScene)
             {
                 SceneChanger.RedirectVanillaGate(to, VanillaGates.TownGate,
@@ -180,9 +223,31 @@ namespace HKCustomSceneMod
             return orig;
         }
 
-        /// <summary>区域名三段。想改文字就改这里，不用碰 Unity。</summary>
+        /// <summary>区域名三段 + 灵魂怪的梦钉文本。想改文字就改这里/改组件上的字段，不用碰 Unity。</summary>
         private string OnLanguageGetHook(string key, string sheet, string orig)
         {
+            // 灵魂怪（PatchGhost）的梦钉文本：键 = HKCS_GHOST_<摆放点名>，后缀由原版 UI 自己拼
+            string ghostText = Patchers.PatchGhost.GetConvo(key);
+            if (ghostText != null)
+            {
+                // ⚠ 2026-09-26：梦钉那条路的 sheet 实测就叫 "Enemy Dreams"
+                //    · 入口怪 → 显示「既然你这么不知好歹，那就去地狱吧！」
+                //    · 出口怪 → 空串（梦钉不弹字）
+                if (sheet == "Enemy Dreams")
+                {
+                    string dream = Patchers.PatchGhost.GetDreamConvo(key);
+                    Modding.Logger.Log(string.Format("[HKCS] 梦语：key={0} → 「{1}」", key, dream ?? "(放行原版)"));
+                    if (dream != null) return dream;
+                }
+                else
+                {
+                    // 交互那条路：把真实文本给他
+                    Modding.Logger.Log(string.Format("[HKCS] 交互文本命中：key={0} sheet={1} → 「{2}」",
+                        key, sheet, ghostText));
+                    return ghostText;
+                }
+            }
+
             if (sheet == "Titles")
             {
                 if (key == AreaTitleKeys[0]) return "被遗忘的";

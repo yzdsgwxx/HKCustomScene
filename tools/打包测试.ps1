@@ -10,6 +10,8 @@
     3. dotnet build -c Release 编译 FinalMod
     4. 关掉空洞骑士，把编译出的 HKCustomSceneMod.dll 装进
        <游戏>\hollow_knight_Data\Managed\Mods\CustomScene\（覆盖前自动备份）
+       ＋ 对面那份 DialogueConfig.json（对话文本）**只在缺失时**放过去，
+         玩家自己改过的文本不会被覆盖（改文本不用重新打包，改完重启游戏即可）
     5. 重新启动空洞骑士（**请 Steam 启动**，原因见下）
 
   用法（在本目录下，用 Windows PowerShell 5.1）：
@@ -144,6 +146,7 @@ try {
     Write-HkcsStep '4/5 把 dll 装进空洞骑士'
     if ($DryRun) {
         Write-HkcsDryRun ('会先关掉正在运行的游戏，然后把 ' + $paths.FinalModDll + ' 拷到 ' + $paths.ModsFolder)
+        Write-HkcsDryRun ('对话文本配置只在缺失时放一份过去：' + $paths.ModDialogueConfig + '（已存在就不动）')
     } else {
         if (-not (Test-Path -LiteralPath $paths.FinalModDll)) {
             Stop-Hkcs ('没有可安装的 dll：' + $paths.FinalModDll)
@@ -160,6 +163,18 @@ try {
         Write-HkcsOk ('已安装：' + $installed)
         Write-HkcsInfo ('大小 ' + $installedItem.Length + ' 字节，SHA256 ' + $hash.Substring(0, 12) + '…')
         Write-HkcsInfo ('其中嵌了 HKCustomSceneMod.Resources.hkcs_scenes（场景包），游戏读的就是它。')
+
+        # 对话文本配置：**只在没有的时候**放一份过去 —— 绝不覆盖玩家自己改过的文本。
+        # 文本改了不用重新打包：直接编辑 mod 目录里那个 json，重启游戏即可。
+        if (Test-Path -LiteralPath $paths.RepoDialogueConfig) {
+            if (Test-Path -LiteralPath $paths.ModDialogueConfig) {
+                Write-HkcsInfo ('对话文本配置已存在，保留不动（不会覆盖你的改动）：' + $paths.ModDialogueConfig)
+            } else {
+                Copy-Item -LiteralPath $paths.RepoDialogueConfig -Destination $paths.ModDialogueConfig -Force
+                Write-HkcsOk ('已放入对话文本配置：' + $paths.ModDialogueConfig)
+                Write-HkcsInfo '改里面的字 → 存盘 → 重启游戏生效（不用重新打包）。'
+            }
+        }
     }
 
     # ------------------------------------------------------------------

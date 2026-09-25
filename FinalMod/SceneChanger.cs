@@ -70,6 +70,13 @@ namespace HKCustomSceneMod
             On.GameManager.BeginSceneTransition += OnBeginSceneTransition;
             // 相机兜底：没补上 tilemap 时原版这个方法会 NRE，把相机彻底带坏（见 OnGetTilemapInfo 注释）
             On.CameraController.GetTilemapInfo += OnGetTilemapInfo;
+            // 灵魂怪：梦钉抽到时原版会调 RecieveDreamImpact，我们借这一下触发"送回椅子"
+            On.EnemyDreamnailReaction.RecieveDreamImpact += OnRecieveDreamImpact;
+            // 全局后门：每帧看英雄状态（不用在场景里摆任何东西）
+            On.HeroController.Update += OnHeroUpdate;
+            On.DialogueBox.SetConversation += OnSetConversation;
+            // 对话**结束**（对话框收起）时，如果刚才是我们的"出口灵魂怪"，就触发传送
+            On.DialogueBox.HideText += OnHideText;
         }
 
         public void Unhook()
@@ -77,6 +84,111 @@ namespace HKCustomSceneMod
             On.GameManager.RefreshTilemapInfo -= OnRefreshTilemapInfo;
             On.GameManager.BeginSceneTransition -= OnBeginSceneTransition;
             On.CameraController.GetTilemapInfo -= OnGetTilemapInfo;
+            On.EnemyDreamnailReaction.RecieveDreamImpact -= OnRecieveDreamImpact;
+            On.HeroController.Update -= OnHeroUpdate;
+            On.DialogueBox.SetConversation -= OnSetConversation;
+            On.DialogueBox.HideText -= OnHideText;
+        }
+
+        /// <summary>正在对话的"出口灵魂怪"（对话一结束就让它传送）。</summary>
+        private Patchers.GhostMarker _pendingExit;
+
+        /// <summary>
+        /// 交互文本替换：我们的灵魂怪是**克隆原版掘墓者**，它被"按上/下交互"触发的对话用的还是原版对话键
+        /// （`PatchGhost` 会把克隆体 FSM 里的那些键抄下来）。这里把那些键换成我们的键，
+        /// 再由 `CustomSceneMod` 的语言钩子返回我们写的文本 ⇒ **交互时显示的就是我们的文本**。
+        /// 另外：如果这只是"出口灵魂怪"（就地生成的那种），记下来，等对话结束就传送。
+        /// </summary>
+        private void OnSetConversation(On.DialogueBox.orig_SetConversation orig,
+                                       DialogueBox self, string convName, string sheetName)
+        {
+            // 1) **先按距离**判断：英雄正站在我们的哪只灵魂怪旁边（2.5 格内）⇒ 这次对话就是它的。
+            //    必须放最前面：`SwapConvo` 只知道"这是原版 GRAVEDIGGER_TALK"这种通用键，
+            //    分不清是入口那只还是迷宫里的出口那只（出口那只的文本和"对话完就传送"都会错）。
+            string ours = null;
+            {
+                HeroController hero = HeroController.instance;
+                if (hero != null)
+                {
+                    // 半径 2.5 格：只有**紧挨着**我们的灵魂怪说话才算（避免把旁边 4 格外的原版掘墓者也算进来）
+                    Patchers.GhostMarker near =
+                        Patchers.PatchGhost.FindMarkerNear(hero.transform.position, 2.5f);
+                    if (near != null) ours = near.ConvoKey;
+                }
+            }
+
+            // 2) 距离没命中 → 退回按"原版对话键"判断（键藏在 FSM 动作字面量里，`PatchGhost` 会把它们抄下来）
+            if (ours == null) ours = Patchers.PatchGhost.SwapConvo(convName);
+
+            if (ours != null)
+            {
+                _logger.Log(string.Format("[HKCS] 交互文本替换：{0} → {1}（sheet={2}）", convName, ours, sheetName));
+                Patchers.GhostMarker marker = Patchers.PatchGhost.GetMarker(ours);
+                if (marker != null && marker.ExitOnDialogueEnd)
+                {
+                    _pendingExit = marker;
+                    _logger.Log("[HKCS] 出口灵魂怪开始对话，等对话结束后传送");
+                }
+                orig(self, ours, sheetName);
+                return;
+            }
+            orig(self, convName, sheetName);
+        }
+
+        /// <summary>对话框收起 = 交互结束 ⇒ 出口灵魂怪触发**不死亡**传送（黑屏后在德特茅斯长椅上醒来）。</summary>
+        private void OnHideText(On.DialogueBox.orig_HideText orig, DialogueBox self)
+        {
+            orig(self);
+
+            if (_pendingExit == null) return;
+            Patchers.GhostMarker marker = _pendingExit;
+            _pendingExit = null;
+            _logger.Log("[HKCS] 交互结束 → 触发出口传送（不杀死骑士）");
+            marker.ExitWithoutDying();
+        }
+
+        /// <summary>全局后门的每帧驱动（见 <see cref="GlobalBackdoor"/>）。</summary>
+        private void OnHeroUpdate(On.HeroController.orig_Update orig, HeroController self)
+        {
+            orig(self);
+            GlobalBackdoor.Tick(self);
+        }
+
+        /// <summary>
+        /// 梦钉命中回调的钩子。反编译 `SendDreamImpact` 得到：梦钉命中后原版会
+        /// `GetComponent/GetComponentInParent&lt;EnemyDreamnailReaction&gt;()` 再调这个方法。
+        /// 我们先放行原版（这样灵魂怪自己的文本/特效照常出），再看看被抽的是不是我们放的灵魂怪
+        /// （身上有 <see cref="HKCustomSceneMod.Patchers.GhostMarker"/>）。
+        /// </summary>
+        private void OnRecieveDreamImpact(On.EnemyDreamnailReaction.orig_RecieveDreamImpact orig,
+                                         EnemyDreamnailReaction self)
+        {
+            // 我们的灵魂怪分两种：
+            //  · **出口**（迷宫里那只）→ 用户要求：**梦钉抽它不应该有任何反应**
+            //    ⇒ 把这一下**整个吞掉**：不放行原版（不弹梦语、不播梦钉特效、不给灵魂），也不传送。
+            //      另外它的 `ghost_npc_dreamnail` FSM 也已经被关掉、convoAmount=0，双保险。
+            //  · 入口（德特茅斯那只）→ 用户要求梦钉**要**弹「既然你这么不知好歹，那就去地狱吧！」
+            //    ⇒ 放行原版（它会走全局 FSM `Enemy Dream Msg`，文本由我们的语言钩子按 `Enemy Dreams` 表给），
+            //      然后照样死亡式传送回迷宫。
+            if (self != null)
+            {
+                Patchers.GhostMarker marker = self.GetComponent<Patchers.GhostMarker>();
+                if (marker != null)
+                {
+                    if (marker.ExitOnDialogueEnd)
+                    {
+                        _logger.Log("[HKCS] 梦钉命中**出口**灵魂怪 → 按用户要求：**毫无反应**（不放行、不弹字、不传送）");
+                        return;
+                    }
+
+                    _logger.Log("[HKCS] 梦钉命中入口灵魂怪 → 放行原版梦语（显示我们的梦语文本），随后死亡式传送");
+                    orig(self);
+                    marker.OnDreamNailed();
+                    return;
+                }
+            }
+
+            orig(self);   // 原版的怪：行为不变
         }
 
         // ────────────────────────────────────────────────────────────────
@@ -89,6 +201,14 @@ namespace HKCustomSceneMod
         // ────────────────────────────────────────────────────────────────
 
         /// <summary>
+        /// ⚠ **总开关**（2026-09-26 按用户要求关掉）：
+        /// true  = 旧行为：德特茅斯跳井 → 直接进我们第一间房；井底爬上来 → 也进房间。
+        /// false = **恢复原版联通**：德特茅斯井口 ↔ 井底（Crossroads_01）照原版走，
+        ///         进迷宫改由**德特茅斯的灵魂怪**负责（梦钉抽它 → 在迷宫椅子上醒来）。
+        /// </summary>
+        internal static readonly bool EnableVanillaGateRedirect = false;
+
+        /// <summary>
         /// 路由表：出发场景 + 原本要去哪 → 实际去哪。
         /// 返回 null 表示不改（放行原版行为）。
         /// </summary>
@@ -96,6 +216,9 @@ namespace HKCustomSceneMod
         {
             entryPoint = null;
             if (Rooms.All.Count == 0) return null;
+
+            // 已按用户要求停用（见 EnableVanillaGateRedirect 的注释）：要恢复"跳井直接进房间"就改成 true
+            if (!EnableVanillaGateRedirect) return null;
 
             // 德特茅斯跳井（原本 → Crossroads_01）→ 第一间房西侧
             if (fromScene == VanillaGates.TownScene && toScene == VanillaGates.CrossroadsScene)
